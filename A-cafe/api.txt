@@ -1,0 +1,10 @@
+GET /api/orders
+POST /api/orders
+GET /api/orders/{order_id}
+POST /api/orders/{order_id}/items
+PATCH /api/orders/{order_id}/items/{item_id}
+DELETE /api/orders/{order_id}/items/{item_id}
+POST /api/orders/{order_id}/confirm
+POST /api/orders/{order_id}/cancel
+POST /api/orders/{order_id}/payment
+POST /api/orders/{order_id}/close

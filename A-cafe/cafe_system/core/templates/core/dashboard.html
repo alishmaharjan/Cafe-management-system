@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cafe POS Dashboard</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'core/dashboard.css' %}">
+</head>
+<body>
+    <header>
+        <h1>Cafe POS Dashboard</h1>
+        <p>Operations, shift, orders, payments, and inventory in one place</p>
+    </header>
+
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-dashboard" type="button">Dashboard</button>
+        <button class="tab-btn" data-tab="tab-create-order" type="button">Create Order</button>
+        <button class="tab-btn" data-tab="tab-active-orders" type="button">Active Orders & Payment</button>
+        <button class="tab-btn" data-tab="tab-inventory" type="button">Inventory</button>
+        <button class="tab-btn" data-tab="tab-shift" type="button">Shift & Day Close</button>
+    </nav>
+
+    <main class="tab-content active" id="tab-dashboard">
+        <section class="grid">
+            <section class="card">
+                <h2>Overview</h2>
+                <div class="row">
+                    <label>Start</label>
+                    <input id="dashboardStartDate" type="date">
+                </div>
+                <div class="row">
+                    <label>End</label>
+                    <input id="dashboardEndDate" type="date">
+                    <button id="loadOverviewBtn" type="button">Load</button>
+                </div>
+                <div id="overviewCards"></div>
+            </section>
+
+            <section class="card">
+                <h2>Daily Sales Report</h2>
+                <div class="row">
+                    <label>Start</label>
+                    <input id="salesStartDate" type="date">
+                </div>
+                <div class="row">
+                    <label>End</label>
+                    <input id="salesEndDate" type="date">
+                    <button id="loadSalesReportBtn" type="button">Load</button>
+                </div>
+                <button id="exportSalesCsvBtn" type="button">Export Sales CSV</button>
+                <div id="salesReportView"></div>
+            </section>
+
+            <section class="card full-width">
+                <h2>Activity Logs</h2>
+                <div class="row">
+                    <label>Limit</label>
+                    <input id="activityLimit" type="number" min="10" max="200" value="50">
+                    <button id="loadActivityBtn" type="button">Refresh Logs</button>
+                </div>
+                <div id="activityLogList"></div>
+            </section>
+        </section>
+    </main>
+
+    <main class="tab-content" id="tab-create-order">
+        <section class="grid">
+            <section class="card">
+                <h2>Create Order</h2>
+                <div class="row">
+                    <label>Order Type</label>
+                    <select id="orderType">
+                        <option value="DINE_IN">Dine In</option>
+                        <option value="TAKEAWAY">Takeaway</option>
+                    </select>
+                </div>
+                <div class="row">
+                    <label>Table No</label>
+                    <input id="tableNo" placeholder="Optional">
+                </div>
+                <div class="row">
+                    <label>Auto Confirm</label>
+                    <input id="autoConfirm" type="checkbox" checked>
+                </div>
+                <div class="row">
+                    <label>Product</label>
+                    <select id="productSelect"></select>
+                </div>
+                <div class="row">
+                    <label>Qty</label>
+                    <input id="productQty" type="number" min="1" value="1">
+                    <button id="addItemBtn" type="button">Add Item</button>
+                </div>
+                <ul id="draftItems"></ul>
+                <button id="createOrderBtn" type="button">Create Order</button>
+            </section>
+        </section>
+    </main>
+
+    <main class="tab-content" id="tab-active-orders">
+        <section class="grid">
+            <section class="card">
+                <h2>Search Orders</h2>
+                <div class="row">
+                    <label>Search</label>
+                    <input id="orderSearch" placeholder="Order no, table, product">
+                </div>
+                <div class="row">
+                    <label>From</label>
+                    <input id="ordersStartDate" type="date">
+                </div>
+                <div class="row">
+                    <label>To</label>
+                    <input id="ordersEndDate" type="date">
+                    <button id="searchOrdersBtn" type="button">Search</button>
+                </div>
+                <button id="refreshOrdersBtn" type="button">Active Orders</button>
+                <div id="ordersList"></div>
+            </section>
+
+            <section class="card">
+                <h2>Add Payment</h2>
+                <div class="row">
+                    <label>Order ID</label>
+                    <input id="paymentOrderId" type="number" min="1">
+                </div>
+                <div class="row">
+                    <label>Method</label>
+                    <select id="paymentMethod">
+                        <option value="CASH">Cash</option>
+                        <option value="CARD">Card</option>
+                        <option value="QR">QR</option>
+                    </select>
+                </div>
+                <div class="row">
+                    <label>Amount</label>
+                    <input id="paymentAmount" type="number" min="0.01" step="0.01">
+                </div>
+                <button id="addPaymentBtn" type="button">Add Payment</button>
+                <div class="row">
+                    <label>Receipt</label>
+                    <input id="receiptOrderId" type="number" min="1" placeholder="Order ID">
+                    <button id="printReceiptBtn" type="button">Print Receipt</button>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <main class="tab-content" id="tab-inventory">
+        <section class="grid">
+            <section class="card">
+                <h2>Stock</h2>
+                <button id="refreshInventoryBtn" type="button">Refresh</button>
+                <div id="inventoryList"></div>
+                <h3>Add Stock Purchase</h3>
+                <div class="row">
+                    <label>Ingredient ID</label>
+                    <input id="purchaseIngredientId" type="number" min="1">
+                </div>
+                <div class="row">
+                    <label>Qty</label>
+                    <input id="purchaseQty" type="number" min="0.001" step="0.001">
+                </div>
+                <button id="purchaseBtn" type="button">Submit Purchase</button>
+            </section>
+
+            <section class="card">
+                <h2>Inventory Report</h2>
+                <div class="row">
+                    <label>Start</label>
+                    <input id="inventoryStartDate" type="date">
+                </div>
+                <div class="row">
+                    <label>End</label>
+                    <input id="inventoryEndDate" type="date">
+                    <button id="loadInventoryReportBtn" type="button">Load</button>
+                </div>
+                <button id="exportInventoryCsvBtn" type="button">Export Inventory CSV</button>
+                <div id="inventoryReportView"></div>
+            </section>
+        </section>
+    </main>
+
+    <main class="tab-content" id="tab-shift">
+        <section class="grid">
+            <section class="card">
+                <h2>Start Shift</h2>
+                <div class="row">
+                    <label>Staff</label>
+                    <input id="shiftStaffName" placeholder="Staff name">
+                </div>
+                <div class="row">
+                    <label>Counter</label>
+                    <input id="shiftCounterName" placeholder="Counter name">
+                </div>
+                <div class="row">
+                    <label>Opening Cash</label>
+                    <input id="openingCash" type="number" min="0" step="0.01">
+                </div>
+                <button id="openShiftBtn" type="button">Start Shift</button>
+                <div id="shiftView"></div>
+            </section>
+
+            <section class="card">
+                <h2>Close Shift</h2>
+                <div class="row">
+                    <label>Shift ID</label>
+                    <input id="closeShiftId" type="number" min="1">
+                </div>
+                <div class="row">
+                    <label>Actual Cash</label>
+                    <input id="closingCashActual" type="number" min="0" step="0.01">
+                </div>
+                <div class="row">
+                    <label>Notes</label>
+                    <input id="shiftCloseNotes" placeholder="Optional notes">
+                    <button id="closeShiftBtn" type="button">Close Shift</button>
+                </div>
+                <div class="row">
+                    <label>Day Date</label>
+                    <input id="dayCloseDate" type="date">
+                    <button id="loadDayCloseBtn" type="button">Load Day Close</button>
+                </div>
+                <button id="printDayCloseBtn" type="button">Print Day Close</button>
+                <div id="dayCloseView"></div>
+            </section>
+        </section>
+    </main>
+
+    <section class="card footer-card">
+        <h2>System Activity Console</h2>
+        <pre id="logPanel"></pre>
+    </section>
+
+    <script src="{% static 'core/dashboard.js' %}"></script>
+</body>
+</html>
