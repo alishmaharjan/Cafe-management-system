@@ -1,0 +1,189 @@
+{% extends 'core/base.html' %}
+{% block title %}Reports — Chiya Garden{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 px-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-line text-success"></i> Reports</h4>
+    <div class="d-flex gap-2 align-items-center">
+      <input type="date" id="startDate" class="form-control form-control-sm" style="width:140px">
+      <span class="text-muted">to</span>
+      <input type="date" id="endDate" class="form-control form-control-sm" style="width:140px">
+      <button class="btn btn-success btn-sm" onclick="loadReports()"><i class="bi bi-arrow-clockwise"></i> Load</button>
+    </div>
+  </div>
+
+  <!-- Sales Summary -->
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Gross Revenue</div><div class="fs-5 fw-bold text-success" id="rGross">—</div></div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Total Orders</div><div class="fs-5 fw-bold" id="rOrders">—</div></div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Paid Orders</div><div class="fs-5 fw-bold text-success" id="rPaid">—</div></div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Cash</div><div class="fs-5 fw-bold" id="rCash">—</div></div><div class="card-body pt-0"><div class="text-muted small">FonePay</div><div class="fs-5 fw-bold" id="rFonepay">—</div></div></div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- Top Products -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header cg-card-header fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-trophy"></i> Top Products</span>
+          <a id="exportSalesBtn" href="#" class="btn btn-outline-light btn-sm" onclick="exportSales()"><i class="bi bi-download"></i> Export CSV</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>#</th><th>Product</th><th class="text-end">Qty Sold</th><th class="text-end">Revenue</th></tr></thead>
+            <tbody id="topProductsBody"><tr><td colspan="4" class="text-muted small p-3">Select a date range and click Load</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Day Close -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-calendar-check"></i> Day Close Summary</span>
+          <div class="d-flex gap-2">
+            <input type="date" id="dayCloseDate" class="form-control form-control-sm" style="width:140px">
+            <button class="btn btn-outline-success btn-sm" onclick="loadDayClose()">Load</button>
+          </div>
+        </div>
+        <div class="card-body" id="dayCloseBody"><div class="text-muted small">Select a date and click Load</div></div>
+        <div class="card-footer bg-white">
+          <button class="btn btn-outline-secondary btn-sm" onclick="printDayClose()"><i class="bi bi-printer"></i> Print</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory Report -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header cg-card-header fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-boxes"></i> Inventory (Low Stock)</span>
+          <a href="#" class="btn btn-outline-light btn-sm" onclick="exportInventory()"><i class="bi bi-download"></i> Export CSV</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Ingredient</th><th>Unit</th><th class="text-end">Current</th><th class="text-end">Min Alert</th></tr></thead>
+            <tbody id="lowStockBody"><tr><td colspan="4" class="text-muted small p-3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Movement Summary -->
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2"><i class="bi bi-arrow-left-right"></i> Movement Summary (Period)</div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Type</th><th class="text-end">Count</th><th class="text-end">Total Qty</th></tr></thead>
+            <tbody id="movSummaryBody"><tr><td colspan="3" class="text-muted small p-3">Load a date range</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmt = v => 'NPR ' + parseFloat(v||0).toLocaleString('en-IN', {minimumFractionDigits:2});
+let lastDayCloseData = null;
+function setDefaultRange() {
+  const today = new Date();
+  const start = new Date(today); start.setDate(start.getDate()-6);
+  document.getElementById('startDate').value = start.toISOString().slice(0,10);
+  document.getElementById('endDate').value = today.toISOString().slice(0,10);
+  document.getElementById('dayCloseDate').value = today.toISOString().slice(0,10);
+}
+async function loadReports() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  try {
+    const data = await apiFetch(`/reports/sales?start_date=${s}&end_date=${e}`);
+    document.getElementById('rGross').textContent = fmt(data.gross_sales);
+    document.getElementById('rOrders').textContent = data.order_count;
+    document.getElementById('rPaid').textContent = data.paid_order_count;
+    const cash = data.payment_breakdown.find(p=>p.method==='CASH');
+    const fp = data.payment_breakdown.find(p=>p.method==='FONEPAY');
+    document.getElementById('rCash').textContent = fmt(cash?.total||0);
+    document.getElementById('rFonepay').textContent = fmt(fp?.total||0);
+    const tbody = document.getElementById('topProductsBody');
+    if (data.top_products.length) {
+      tbody.innerHTML = data.top_products.map((p,i) =>
+        `<tr><td>${i+1}</td><td>${p.product_name}</td><td class="text-end">${p.total_qty}</td><td class="text-end">${fmt(p.revenue)}</td></tr>`
+      ).join('');
+    } else { tbody.innerHTML = '<tr><td colspan="4" class="text-muted small p-3">No sales in this period</td></tr>'; }
+    // Inventory report
+    const inv = await apiFetch(`/reports/inventory?start_date=${s}&end_date=${e}`);
+    const lsBody = document.getElementById('lowStockBody');
+    lsBody.innerHTML = inv.low_stock.length
+      ? inv.low_stock.map(i => `<tr class="table-danger"><td>${i.name}</td><td>${i.unit}</td><td class="text-end">${i.current_qty}</td><td class="text-end">${i.min_qty_alert}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="text-success small p-3">All stock levels OK</td></tr>';
+    const msBody = document.getElementById('movSummaryBody');
+    msBody.innerHTML = inv.movement_summary.length
+      ? inv.movement_summary.map(m => `<tr><td>${m.movement_type}</td><td class="text-end">${m.count}</td><td class="text-end">${m.total_qty}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="text-muted small p-3">No movements</td></tr>';
+  } catch(err) { showAlert(err.message); }
+}
+async function loadDayClose() {
+  const d = document.getElementById('dayCloseDate').value;
+  if (!d) return;
+  try {
+    lastDayCloseData = await apiFetch(`/reports/day-close?date=${d}`);
+    const b = document.getElementById('dayCloseBody');
+    b.innerHTML = `
+      <div class="row row-cols-2 g-2">
+        <div class="col"><div class="text-muted small">Date</div><strong>${lastDayCloseData.date}</strong></div>
+        <div class="col"><div class="text-muted small">Total Orders</div><strong>${lastDayCloseData.total_orders}</strong></div>
+        <div class="col"><div class="text-muted small">Paid Orders</div><strong class="text-success">${lastDayCloseData.paid_orders}</strong></div>
+        <div class="col"><div class="text-muted small">Cancelled</div><strong class="text-danger">${lastDayCloseData.cancelled_orders}</strong></div>
+        <div class="col"><div class="text-muted small">Gross Sales</div><strong class="text-success">${fmt(lastDayCloseData.gross_sales)}</strong></div>
+        <div class="col"><div class="text-muted small">Cash</div><strong>${fmt(lastDayCloseData.cash_total)}</strong></div>
+        <div class="col"><div class="text-muted small">FonePay QR</div><strong>${fmt(lastDayCloseData.fonepay_total)}</strong></div>
+      </div>`;
+  } catch(err) { showAlert(err.message); }
+}
+function exportSales() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  window.open(`/api/reports/sales/export?start_date=${s}&end_date=${e}`, '_blank');
+}
+function exportInventory() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  window.open(`/api/reports/inventory/export?start_date=${s}&end_date=${e}`, '_blank');
+}
+function printDayClose() {
+  if (!lastDayCloseData) { showAlert('Load a day close first.'); return; }
+  const d = lastDayCloseData;
+  const w = window.open('','_blank');
+  w.document.write(`<html><head><title>Day Close ${d.date}</title><style>body{font-family:monospace;padding:20px}h2{border-bottom:2px solid #000;padding-bottom:8px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #ccc}</style></head><body>
+    <h2>Chiya Garden — Day Close</h2>
+    <div class="row"><span>Date</span><strong>${d.date}</strong></div>
+    <div class="row"><span>Total Orders</span><strong>${d.total_orders}</strong></div>
+    <div class="row"><span>Paid Orders</span><strong>${d.paid_orders}</strong></div>
+    <div class="row"><span>Cancelled</span><strong>${d.cancelled_orders}</strong></div>
+    <hr>
+    <div class="row"><span>Gross Sales</span><strong>NPR ${d.gross_sales}</strong></div>
+    <div class="row"><span>Cash</span><strong>NPR ${d.cash_total}</strong></div>
+    <div class="row"><span>FonePay QR</span><strong>NPR ${d.fonepay_total}</strong></div>
+    <br><div style="text-align:center;font-size:.8rem;color:#666;">Printed ${new Date().toLocaleString()}</div>
+    </body></html>`);
+  w.document.close(); w.print();
+}
+setDefaultRange();
+loadReports();
+loadDayClose();
+</script>
+{% endblock %}

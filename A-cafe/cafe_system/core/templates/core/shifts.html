@@ -1,0 +1,164 @@
+{% extends 'core/base.html' %}
+{% block title %}Shift Management — Chiya Garden{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 px-4">
+  <h4 class="fw-bold mb-3"><i class="bi bi-clock text-success"></i> Shift Management</h4>
+
+  <!-- Current Shift Banner -->
+  <div id="shiftBanner" class="alert alert-info d-none mb-3">
+    <strong>Active Shift:</strong> <span id="bannerText"></span>
+    &nbsp;|&nbsp; <a href="#closeShift" class="alert-link">Close Shift ↓</a>
+  </div>
+
+  <div class="row g-3">
+    <!-- Open Shift -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-play-circle"></i> Open Shift</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Staff Name</label>
+            <input type="text" class="form-control form-control-sm" id="staffName" placeholder="e.g. Sita Rai">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Counter Name</label>
+            <input type="text" class="form-control form-control-sm" id="counterName" placeholder="e.g. Main Counter">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Opening Cash (NPR)</label>
+            <input type="number" class="form-control form-control-sm" id="openingCash" min="0" step="1" placeholder="0">
+          </div>
+          <button class="btn btn-success w-100 fw-semibold" onclick="openShift()"><i class="bi bi-play-fill"></i> Start Shift</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Close Shift -->
+    <div class="col-md-4" id="closeShift">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-warning fw-semibold py-2"><i class="bi bi-stop-circle"></i> Close Shift</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Shift ID</label>
+            <input type="number" class="form-control form-control-sm" id="closeShiftId" min="1" placeholder="Auto-filled">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Actual Cash Counted (NPR)</label>
+            <input type="number" class="form-control form-control-sm" id="closingCash" min="0" step="1" placeholder="Count your drawer">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Notes</label>
+            <textarea class="form-control form-control-sm" id="closeNotes" rows="2" placeholder="Any notes for this shift..."></textarea>
+          </div>
+          <button class="btn btn-warning w-100 fw-semibold" onclick="closeShift()"><i class="bi bi-stop-fill"></i> Close Shift</button>
+          <div id="closeResult" class="mt-3 d-none">
+            <!-- Reconciliation result shown here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shift History / Print -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2"><i class="bi bi-journal"></i> Shift Status</div>
+        <div class="card-body" id="currentShiftDetail">
+          <div class="text-muted small">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmt = v => 'NPR ' + parseFloat(v||0).toLocaleString('en-IN', {minimumFractionDigits:2});
+async function loadCurrentShift() {
+  try {
+    const data = await apiFetch('/shifts/current');
+    const detail = document.getElementById('currentShiftDetail');
+    const banner = document.getElementById('shiftBanner');
+    if (!data) {
+      detail.innerHTML = '<div class="text-muted small">No active shift. Open one to start taking orders.</div>';
+      banner.classList.add('d-none');
+      return;
+    }
+    document.getElementById('closeShiftId').value = data.id;
+    banner.classList.remove('d-none');
+    document.getElementById('bannerText').textContent =
+      `#${data.id} — ${data.staff_name||'Unknown'} @ ${data.counter_name||'Counter'} — opened ${new Date(data.opened_at).toLocaleTimeString()}`;
+    detail.innerHTML = `
+      <div class="row row-cols-2 g-2">
+        <div class="col"><div class="text-muted small">Shift ID</div><strong>#${data.id}</strong></div>
+        <div class="col"><div class="text-muted small">Status</div><span class="badge bg-success">${data.status}</span></div>
+        <div class="col"><div class="text-muted small">Staff</div><strong>${data.staff_name||'—'}</strong></div>
+        <div class="col"><div class="text-muted small">Counter</div><strong>${data.counter_name||'—'}</strong></div>
+        <div class="col"><div class="text-muted small">Opened</div><strong>${new Date(data.opened_at).toLocaleString()}</strong></div>
+        <div class="col"><div class="text-muted small">Opening Cash</div><strong>${fmt(data.opening_cash)}</strong></div>
+      </div>`;
+  } catch(err) { document.getElementById('currentShiftDetail').innerHTML = `<div class="text-danger small">${err.message}</div>`; }
+}
+async function openShift() {
+  const staff = document.getElementById('staffName').value.trim();
+  const counter = document.getElementById('counterName').value.trim();
+  const cash = parseFloat(document.getElementById('openingCash').value||0);
+  if (!staff) { showAlert('Enter staff name.'); return; }
+  try {
+    await apiFetch('/shifts/open', {
+      method: 'POST',
+      body: JSON.stringify({staff_name: staff, counter_name: counter, opening_cash: cash})
+    });
+    showAlert(`Shift started for ${staff}`, 'success');
+    document.getElementById('staffName').value = '';
+    document.getElementById('openingCash').value = '';
+    loadCurrentShift();
+  } catch(err) { showAlert(err.message); }
+}
+async function closeShift() {
+  const shiftId = document.getElementById('closeShiftId').value;
+  const cash = parseFloat(document.getElementById('closingCash').value||0);
+  const notes = document.getElementById('closeNotes').value;
+  if (!shiftId) { showAlert('No shift ID. Open a shift first.'); return; }
+  if (!confirm(`Close shift #${shiftId}? This cannot be undone.`)) return;
+  try {
+    const data = await apiFetch(`/shifts/${shiftId}/close`, {
+      method: 'POST',
+      body: JSON.stringify({closing_cash_actual: cash, notes})
+    });
+    const result = document.getElementById('closeResult');
+    result.classList.remove('d-none');
+    const variance = parseFloat(data.variance);
+    const varClass = variance >= 0 ? 'success' : 'danger';
+    result.innerHTML = `<div class="alert alert-${varClass} py-2 small">
+      <strong>Shift Closed</strong><br>
+      Cash Sales: ${fmt(data.cash_sales)}<br>
+      Expected: ${fmt(data.closing_cash_expected)}<br>
+      Counted: ${fmt(data.closing_cash_actual)}<br>
+      <strong>Variance: ${fmt(data.variance)}</strong>
+    </div>
+    <button class="btn btn-outline-secondary btn-sm w-100" onclick="printShiftClose(${JSON.stringify(data).replace(/'/g,"&#39;")})">
+      <i class="bi bi-printer"></i> Print Summary
+    </button>`;
+    showAlert('Shift closed successfully.', 'success');
+    loadCurrentShift();
+  } catch(err) { showAlert(err.message); }
+}
+function printShiftClose(data) {
+  const w = window.open('','_blank');
+  w.document.write(`<html><head><title>Shift Close</title><style>body{font-family:monospace;padding:20px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #ccc}</style></head><body>
+    <h2>Chiya Garden — Shift Close</h2>
+    <div class="row"><span>Shift #</span><strong>${data.id||''}</strong></div>
+    <div class="row"><span>Opening Cash</span><strong>NPR ${data.opening_cash}</strong></div>
+    <div class="row"><span>Cash Sales</span><strong>NPR ${data.cash_sales}</strong></div>
+    <div class="row"><span>Expected</span><strong>NPR ${data.closing_cash_expected}</strong></div>
+    <div class="row"><span>Counted</span><strong>NPR ${data.closing_cash_actual}</strong></div>
+    <div class="row"><span>Variance</span><strong>NPR ${data.variance}</strong></div>
+    <br><div style="text-align:center;font-size:.8rem;color:#666;">Printed ${new Date().toLocaleString()}</div>
+    </body></html>`);
+  w.document.close(); w.print();
+}
+loadCurrentShift();
+</script>
+{% endblock %}

@@ -1,0 +1,157 @@
+{% extends 'core/base.html' %}
+{% block title %}Inventory — Chiya Garden{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 px-4">
+  <h4 class="fw-bold mb-3"><i class="bi bi-boxes text-success"></i> Inventory</h4>
+  <div class="row g-3">
+
+    <!-- Stock Levels -->
+    <div class="col-md-7">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span>Stock Levels</span>
+          <button class="btn btn-outline-success btn-sm" onclick="loadIngredients()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0" id="ingredientsTable">
+            <thead><tr><th>#</th><th>Ingredient</th><th>Unit</th><th class="text-end">Current Qty</th><th class="text-end">Min Alert</th><th>Status</th></tr></thead>
+            <tbody id="ingredientsBody"><tr><td colspan="6" class="text-muted small p-3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="col-md-5">
+      <!-- Purchase Stock -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-bag-plus"></i> Add Stock Purchase</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Ingredient</label>
+            <select class="form-select form-select-sm" id="purchaseIngredient"></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Quantity</label>
+            <input type="number" class="form-control form-control-sm" id="purchaseQty" min="0.001" step="0.001" placeholder="e.g. 5">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Note <span class="text-muted fw-normal">(optional)</span></label>
+            <input type="text" class="form-control form-control-sm" id="purchaseNote" placeholder="Supplier, batch no...">
+          </div>
+          <button class="btn btn-success btn-sm w-100" onclick="submitPurchase()"><i class="bi bi-check-lg"></i> Record Purchase</button>
+        </div>
+      </div>
+
+      <!-- Manual Adjustment -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-sliders"></i> Manual Adjustment</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Ingredient</label>
+            <select class="form-select form-select-sm" id="adjustIngredient"></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Qty Change <span class="text-muted fw-normal">(use negative to reduce)</span></label>
+            <input type="number" class="form-control form-control-sm" id="adjustQty" step="0.001" placeholder="e.g. -2.5 or 3">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason</label>
+            <input type="text" class="form-control form-control-sm" id="adjustNote" placeholder="Spillage, count correction...">
+          </div>
+          <button class="btn btn-warning btn-sm w-100" onclick="submitAdjustment()"><i class="bi bi-check-lg"></i> Apply Adjustment</button>
+        </div>
+      </div>
+
+      <!-- Movement History -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-clock-history"></i> Recent Movements</span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadMovements()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body p-0" style="max-height:280px;overflow-y:auto;">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Ingredient</th><th>Type</th><th class="text-end">Qty</th><th>Time</th></tr></thead>
+            <tbody id="movementsBody"><tr><td colspan="4" class="text-muted small p-3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let ingredientsList = [];
+async function loadIngredients() {
+  try {
+    ingredientsList = await apiFetch('/inventory/ingredients');
+    const tbody = document.getElementById('ingredientsBody');
+    tbody.innerHTML = ingredientsList.map((i,idx) => {
+      const low = parseFloat(i.current_qty) <= parseFloat(i.min_qty_alert);
+      return `<tr class="${low?'table-danger':''}">
+        <td>${idx+1}</td><td class="fw-semibold">${i.name}</td><td>${i.unit}</td>
+        <td class="text-end">${i.current_qty}</td>
+        <td class="text-end">${i.min_qty_alert}</td>
+        <td>${low?'<span class="badge bg-danger">Low</span>':'<span class="badge bg-success">OK</span>'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="text-muted small p-3">No ingredients found. Add them via Admin panel.</td></tr>';
+    // Populate ingredient selects
+    const opts = ingredientsList.map(i => `<option value="${i.id}">${i.name} (${i.current_qty}${i.unit})</option>`).join('');
+    document.getElementById('purchaseIngredient').innerHTML = opts || '<option disabled>No ingredients</option>';
+    document.getElementById('adjustIngredient').innerHTML = opts || '<option disabled>No ingredients</option>';
+  } catch(err) { showAlert(err.message); }
+}
+async function loadMovements() {
+  try {
+    const data = await apiFetch('/inventory/movements');
+    const tbody = document.getElementById('movementsBody');
+    const typeClr = {PURCHASE:'success',CONSUME:'warning',ADJUST:'info',WASTE:'danger',RETURN:'secondary'};
+    tbody.innerHTML = data.map(m =>
+      `<tr><td>${m.ingredient}</td>
+       <td><span class="badge bg-${typeClr[m.movement_type]||'secondary'}">${m.movement_type}</span></td>
+       <td class="text-end">${m.qty_change}</td>
+       <td style="font-size:.75rem;">${m.created_at}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="text-muted small p-3">No movements</td></tr>';
+  } catch(err) {}
+}
+async function submitPurchase() {
+  const ingId = document.getElementById('purchaseIngredient').value;
+  const qty = document.getElementById('purchaseQty').value;
+  const note = document.getElementById('purchaseNote').value;
+  if (!ingId || !qty) { showAlert('Select an ingredient and enter quantity.'); return; }
+  try {
+    const data = await apiFetch('/inventory/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ingredient_id: parseInt(ingId), qty: parseFloat(qty), note})
+    });
+    showAlert(`Purchase recorded. ${data.name} new stock: ${data.new_qty}`, 'success');
+    document.getElementById('purchaseQty').value = '';
+    document.getElementById('purchaseNote').value = '';
+    loadIngredients();
+    loadMovements();
+  } catch(err) { showAlert(err.message); }
+}
+async function submitAdjustment() {
+  const ingId = document.getElementById('adjustIngredient').value;
+  const qty = document.getElementById('adjustQty').value;
+  const note = document.getElementById('adjustNote').value;
+  if (!ingId || !qty) { showAlert('Select an ingredient and enter adjustment.'); return; }
+  try {
+    const data = await apiFetch('/inventory/adjustment', {
+      method: 'POST',
+      body: JSON.stringify({ingredient_id: parseInt(ingId), qty_change: parseFloat(qty), note})
+    });
+    showAlert(`Adjustment applied. New qty: ${data.new_qty}`, 'success');
+    document.getElementById('adjustQty').value = '';
+    document.getElementById('adjustNote').value = '';
+    loadIngredients();
+    loadMovements();
+  } catch(err) { showAlert(err.message); }
+}
+loadIngredients();
+loadMovements();
+</script>
+{% endblock %}

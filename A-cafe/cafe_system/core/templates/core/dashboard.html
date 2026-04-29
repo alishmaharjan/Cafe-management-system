@@ -1,238 +1,178 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cafe POS Dashboard</title>
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'core/dashboard.css' %}">
-</head>
-<body>
-    <header>
-        <h1>Cafe POS Dashboard</h1>
-        <p>Operations, shift, orders, payments, and inventory in one place</p>
-    </header>
+{% extends 'core/base.html' %}
+{% block title %}Dashboard — Chiya Garden{% endblock %}
 
-    <nav class="tabs">
-        <button class="tab-btn active" data-tab="tab-dashboard" type="button">Dashboard</button>
-        <button class="tab-btn" data-tab="tab-create-order" type="button">Create Order</button>
-        <button class="tab-btn" data-tab="tab-active-orders" type="button">Active Orders & Payment</button>
-        <button class="tab-btn" data-tab="tab-inventory" type="button">Inventory</button>
-        <button class="tab-btn" data-tab="tab-shift" type="button">Shift & Day Close</button>
-    </nav>
+{% block content %}
+<div class="container-fluid py-3 px-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0 fw-bold"><i class="bi bi-speedometer2 text-success"></i> Dashboard</h4>
+    <div class="d-flex gap-2 align-items-center">
+      <input type="date" id="startDate" class="form-control form-control-sm" style="width:140px">
+      <span class="text-muted">to</span>
+      <input type="date" id="endDate" class="form-control form-control-sm" style="width:140px">
+      <button class="btn btn-success btn-sm" onclick="loadDashboard()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+  </div>
 
-    <main class="tab-content active" id="tab-dashboard">
-        <section class="grid">
-            <section class="card">
-                <h2>Overview</h2>
-                <div class="row">
-                    <label>Start</label>
-                    <input id="dashboardStartDate" type="date">
-                </div>
-                <div class="row">
-                    <label>End</label>
-                    <input id="dashboardEndDate" type="date">
-                    <button id="loadOverviewBtn" type="button">Load</button>
-                </div>
-                <div id="overviewCards"></div>
-            </section>
+  <!-- KPI Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body"><div class="text-muted small">Revenue (Period)</div><div class="fs-4 fw-bold text-success" id="kpiRevenue">—</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body"><div class="text-muted small">Orders (Period)</div><div class="fs-4 fw-bold" id="kpiOrders">—</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body"><div class="text-muted small">Active Orders</div><div class="fs-4 fw-bold text-warning" id="kpiActive">—</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body"><div class="text-muted small">Low Stock Alerts</div><div class="fs-4 fw-bold text-danger" id="kpiLowStock">—</div></div>
+      </div>
+    </div>
+  </div>
 
-            <section class="card">
-                <h2>Daily Sales Report</h2>
-                <div class="row">
-                    <label>Start</label>
-                    <input id="salesStartDate" type="date">
-                </div>
-                <div class="row">
-                    <label>End</label>
-                    <input id="salesEndDate" type="date">
-                    <button id="loadSalesReportBtn" type="button">Load</button>
-                </div>
-                <button id="exportSalesCsvBtn" type="button">Export Sales CSV</button>
-                <div id="salesReportView"></div>
-            </section>
+  <div class="row g-3">
+    <!-- Shift Status -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-clock"></i> Current Shift</div>
+        <div class="card-body" id="shiftCard"><div class="text-muted small">Loading...</div></div>
+      </div>
+    </div>
+    <!-- Top Products -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-trophy"></i> Top Products</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Revenue</th></tr></thead>
+            <tbody id="topProductsBody"><tr><td colspan="3" class="text-muted small p-3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- Payment Breakdown -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-pie-chart"></i> Payment Methods</div>
+        <div class="card-body" id="paymentCard"><div class="text-muted small">Loading...</div></div>
+      </div>
+    </div>
 
-            <section class="card full-width">
-                <h2>Activity Logs</h2>
-                <div class="row">
-                    <label>Limit</label>
-                    <input id="activityLimit" type="number" min="10" max="200" value="50">
-                    <button id="loadActivityBtn" type="button">Refresh Logs</button>
-                </div>
-                <div id="activityLogList"></div>
-            </section>
-        </section>
-    </main>
+    <!-- Active Orders Table -->
+    <div class="col-md-8">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-receipt"></i> Active Orders</span>
+          <button class="btn btn-outline-success btn-sm" onclick="loadActiveOrders()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Order#</th><th>Type</th><th>Table</th><th>Status</th><th>Total</th><th>Time</th></tr></thead>
+            <tbody id="activeOrdersBody"><tr><td colspan="6" class="text-muted small p-3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
-    <main class="tab-content" id="tab-create-order">
-        <section class="grid">
-            <section class="card">
-                <h2>Create Order</h2>
-                <div class="row">
-                    <label>Order Type</label>
-                    <select id="orderType">
-                        <option value="DINE_IN">Dine In</option>
-                        <option value="TAKEAWAY">Takeaway</option>
-                    </select>
-                </div>
-                <div class="row">
-                    <label>Table No</label>
-                    <input id="tableNo" placeholder="Optional">
-                </div>
-                <div class="row">
-                    <label>Auto Confirm</label>
-                    <input id="autoConfirm" type="checkbox" checked>
-                </div>
-                <div class="row">
-                    <label>Product</label>
-                    <select id="productSelect"></select>
-                </div>
-                <div class="row">
-                    <label>Qty</label>
-                    <input id="productQty" type="number" min="1" value="1">
-                    <button id="addItemBtn" type="button">Add Item</button>
-                </div>
-                <ul id="draftItems"></ul>
-                <button id="createOrderBtn" type="button">Create Order</button>
-            </section>
-        </section>
-    </main>
+    <!-- Activity Log -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-journal-text"></i> Activity</span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadActivityLogs()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="card-body p-2" style="max-height:300px;overflow-y:auto;" id="activityLog">
+          <div class="text-muted small">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
 
-    <main class="tab-content" id="tab-active-orders">
-        <section class="grid">
-            <section class="card">
-                <h2>Search Orders</h2>
-                <div class="row">
-                    <label>Search</label>
-                    <input id="orderSearch" placeholder="Order no, table, product">
-                </div>
-                <div class="row">
-                    <label>From</label>
-                    <input id="ordersStartDate" type="date">
-                </div>
-                <div class="row">
-                    <label>To</label>
-                    <input id="ordersEndDate" type="date">
-                    <button id="searchOrdersBtn" type="button">Search</button>
-                </div>
-                <button id="refreshOrdersBtn" type="button">Active Orders</button>
-                <div id="ordersList"></div>
-            </section>
-
-            <section class="card">
-                <h2>Add Payment</h2>
-                <div class="row">
-                    <label>Order ID</label>
-                    <input id="paymentOrderId" type="number" min="1">
-                </div>
-                <div class="row">
-                    <label>Method</label>
-                    <select id="paymentMethod">
-                        <option value="CASH">Cash</option>
-                        <option value="CARD">Card</option>
-                        <option value="QR">QR</option>
-                    </select>
-                </div>
-                <div class="row">
-                    <label>Amount</label>
-                    <input id="paymentAmount" type="number" min="0.01" step="0.01">
-                </div>
-                <button id="addPaymentBtn" type="button">Add Payment</button>
-                <div class="row">
-                    <label>Receipt</label>
-                    <input id="receiptOrderId" type="number" min="1" placeholder="Order ID">
-                    <button id="printReceiptBtn" type="button">Print Receipt</button>
-                </div>
-            </section>
-        </section>
-    </main>
-
-    <main class="tab-content" id="tab-inventory">
-        <section class="grid">
-            <section class="card">
-                <h2>Stock</h2>
-                <button id="refreshInventoryBtn" type="button">Refresh</button>
-                <div id="inventoryList"></div>
-                <h3>Add Stock Purchase</h3>
-                <div class="row">
-                    <label>Ingredient ID</label>
-                    <input id="purchaseIngredientId" type="number" min="1">
-                </div>
-                <div class="row">
-                    <label>Qty</label>
-                    <input id="purchaseQty" type="number" min="0.001" step="0.001">
-                </div>
-                <button id="purchaseBtn" type="button">Submit Purchase</button>
-            </section>
-
-            <section class="card">
-                <h2>Inventory Report</h2>
-                <div class="row">
-                    <label>Start</label>
-                    <input id="inventoryStartDate" type="date">
-                </div>
-                <div class="row">
-                    <label>End</label>
-                    <input id="inventoryEndDate" type="date">
-                    <button id="loadInventoryReportBtn" type="button">Load</button>
-                </div>
-                <button id="exportInventoryCsvBtn" type="button">Export Inventory CSV</button>
-                <div id="inventoryReportView"></div>
-            </section>
-        </section>
-    </main>
-
-    <main class="tab-content" id="tab-shift">
-        <section class="grid">
-            <section class="card">
-                <h2>Start Shift</h2>
-                <div class="row">
-                    <label>Staff</label>
-                    <input id="shiftStaffName" placeholder="Staff name">
-                </div>
-                <div class="row">
-                    <label>Counter</label>
-                    <input id="shiftCounterName" placeholder="Counter name">
-                </div>
-                <div class="row">
-                    <label>Opening Cash</label>
-                    <input id="openingCash" type="number" min="0" step="0.01">
-                </div>
-                <button id="openShiftBtn" type="button">Start Shift</button>
-                <div id="shiftView"></div>
-            </section>
-
-            <section class="card">
-                <h2>Close Shift</h2>
-                <div class="row">
-                    <label>Shift ID</label>
-                    <input id="closeShiftId" type="number" min="1">
-                </div>
-                <div class="row">
-                    <label>Actual Cash</label>
-                    <input id="closingCashActual" type="number" min="0" step="0.01">
-                </div>
-                <div class="row">
-                    <label>Notes</label>
-                    <input id="shiftCloseNotes" placeholder="Optional notes">
-                    <button id="closeShiftBtn" type="button">Close Shift</button>
-                </div>
-                <div class="row">
-                    <label>Day Date</label>
-                    <input id="dayCloseDate" type="date">
-                    <button id="loadDayCloseBtn" type="button">Load Day Close</button>
-                </div>
-                <button id="printDayCloseBtn" type="button">Print Day Close</button>
-                <div id="dayCloseView"></div>
-            </section>
-        </section>
-    </main>
-
-    <section class="card footer-card">
-        <h2>System Activity Console</h2>
-        <pre id="logPanel"></pre>
-    </section>
-
-    <script src="{% static 'core/dashboard.js' %}"></script>
-</body>
-</html>
+{% block extra_scripts %}
+<script>
+const fmt = v => 'NPR ' + parseFloat(v||0).toLocaleString('en-IN', {minimumFractionDigits:2});
+function setDefaultRange() {
+  const today = new Date();
+  const start = new Date(today); start.setDate(start.getDate()-6);
+  document.getElementById('startDate').value = start.toISOString().slice(0,10);
+  document.getElementById('endDate').value = today.toISOString().slice(0,10);
+}
+async function loadDashboard() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  try {
+    const data = await apiFetch(`/dashboard/overview?start_date=${s}&end_date=${e}`);
+    document.getElementById('kpiRevenue').textContent = fmt(data.summary.gross_sales);
+    document.getElementById('kpiOrders').textContent = data.summary.order_count;
+    document.getElementById('kpiActive').textContent = data.active_orders;
+    document.getElementById('kpiLowStock').textContent = data.low_stock_count;
+    const sc = document.getElementById('shiftCard');
+    if (data.current_shift) {
+      const sh = data.current_shift;
+      sc.innerHTML = `<div><strong>Staff:</strong> ${sh.staff_name||'—'}</div>
+        <div><strong>Counter:</strong> ${sh.counter_name||'—'}</div>
+        <div><strong>Opened:</strong> ${new Date(sh.opened_at).toLocaleTimeString()}</div>
+        <div><strong>Opening Cash:</strong> ${fmt(sh.opening_cash)}</div>
+        <div class="mt-2"><a href="/shifts/" class="btn btn-outline-danger btn-sm">Close Shift</a></div>`;
+    } else {
+      sc.innerHTML = `<div class="text-muted mb-2">No active shift</div><a href="/shifts/" class="btn btn-success btn-sm">Open Shift</a>`;
+    }
+    const tbody = document.getElementById('topProductsBody');
+    if (data.summary.top_products && data.summary.top_products.length) {
+      tbody.innerHTML = data.summary.top_products.map(p =>
+        `<tr><td>${p.product_name}</td><td class="text-end">${p.total_qty}</td><td class="text-end">${fmt(p.revenue)}</td></tr>`
+      ).join('');
+    } else { tbody.innerHTML = '<tr><td colspan="3" class="text-muted small p-2">No sales data</td></tr>'; }
+    const pc = document.getElementById('paymentCard');
+    if (data.summary.payment_breakdown && data.summary.payment_breakdown.length) {
+      pc.innerHTML = data.summary.payment_breakdown.map(pb =>
+        `<div class="d-flex justify-content-between py-1 border-bottom">
+          <span><i class="bi bi-${pb.method==='CASH'?'cash':'phone'}"></i> ${pb.method}</span>
+          <strong>${fmt(pb.total)}</strong></div>`
+      ).join('');
+    } else { pc.innerHTML = '<div class="text-muted small">No payments in period</div>'; }
+  } catch(err) { showAlert(err.message); }
+}
+async function loadActiveOrders() {
+  try {
+    const data = await apiFetch('/orders?active_only=true');
+    const tbody = document.getElementById('activeOrdersBody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-muted small p-3">No active orders</td></tr>'; return; }
+    const cls = {OPEN:'warning',CONFIRMED:'info',PREPARING:'primary',SERVED:'success',PAID:'secondary',CANCELLED:'danger'};
+    tbody.innerHTML = data.map(o =>
+      `<tr><td class="fw-semibold">${o.order_no||'#'+o.id}</td><td>${o.order_type}</td>
+       <td>${o.table_no||'—'}</td>
+       <td><span class="badge bg-${cls[o.status]||'secondary'}">${o.status}</span></td>
+       <td>${fmt(o.grand_total)}</td>
+       <td>${new Date(o.created_at).toLocaleTimeString()}</td></tr>`
+    ).join('');
+  } catch(err) { showAlert(err.message); }
+}
+async function loadActivityLogs() {
+  try {
+    const data = await apiFetch('/dashboard/activity-logs?limit=30');
+    const el = document.getElementById('activityLog');
+    el.innerHTML = data.map(l =>
+      `<div class="border-bottom py-1" style="font-size:.75rem;">
+        <span class="badge bg-secondary me-1">${l.type}</span>${l.message}
+        <div class="text-muted" style="font-size:.65rem;">${l.timestamp}</div>
+      </div>`
+    ).join('') || '<div class="text-muted small">No logs</div>';
+  } catch(err) {}
+}
+setDefaultRange();
+loadDashboard();
+loadActiveOrders();
+loadActivityLogs();
+setInterval(() => { loadActiveOrders(); loadActivityLogs(); }, 30000);
+</script>
+{% endblock %}
