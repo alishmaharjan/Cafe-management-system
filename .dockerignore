@@ -1,0 +1,11 @@
+A-cafe/venv/
+A-cafe/cafe_system/staticfiles/
+A-cafe/cafe_system/media/
+A-cafe/cafe_system/chiya_garden.sqlite3
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.git/
+.gitignore
+READ.md

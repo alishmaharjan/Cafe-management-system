@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - cafe_data:/data
+    environment:
+      SECRET_KEY: "change-this-to-a-long-random-string-in-production"
+      DEBUG: "False"
+      DB_PATH: "/data/chiya_garden.sqlite3"
+    restart: unless-stopped
+
+volumes:
+  cafe_data:
