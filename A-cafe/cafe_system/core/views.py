@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .models import (
-    AuditLog, Category, Ingredient, InventoryMovement,
+    AuditLog, Category, CreditAccount, CreditRecord, Ingredient, InventoryMovement,
     Order, OrderItem, Payment, Product, Shift, Table,
 )
 from .services import StockError, consume_stock_for_order, recompute_order_totals, restore_stock_for_order
@@ -576,25 +576,33 @@ def add_payment(request, order_id):
 @csrf_exempt
 @require_http_methods(['POST'])
 def checkout_order(request, order_id):
-    """Single-step POS checkout: confirm stock + record payment + close order."""
+    """Single-step POS checkout: confirm stock + record payment(s) + close order.
+    Accepts a 'payments' list to support split payments (cash + fonepay)."""
     body = _json_body(request)
     if body is None:
         return _response(False, 'Invalid JSON', status=400)
-    method = body.get('method', '').upper()
-    if method not in Payment.MethodChoices.values:
-        return _response(False, f'Invalid method. Use: {", ".join(Payment.MethodChoices.values)}', status=400)
-    try:
-        amount = Decimal(str(body.get('amount', '')))
-        if amount <= 0:
-            raise InvalidOperation
-    except InvalidOperation:
-        return _response(False, 'Invalid amount', status=400)
-    txn_ref = body.get('txn_ref', '')
+
+    # Parse payments list (supports single or split)
+    raw_payments = body.get('payments')
+    if not raw_payments:
+        return _response(False, 'No payments provided', status=400)
+
+    parsed = []
+    for p in raw_payments:
+        method = str(p.get('method', '')).upper()
+        if method not in Payment.MethodChoices.values:
+            return _response(False, f'Invalid method: {method}', status=400)
+        try:
+            amount = Decimal(str(p.get('amount', '')))
+            if amount <= 0:
+                raise InvalidOperation
+        except InvalidOperation:
+            return _response(False, f'Invalid amount for {method}', status=400)
+        parsed.append({'method': method, 'amount': amount, 'txn_ref': str(p.get('txn_ref', '') or '')})
+
     discount_raw = body.get('discount', '0')
     try:
-        discount = Decimal(str(discount_raw))
-        if discount < 0:
-            discount = Decimal('0')
+        discount = max(Decimal(str(discount_raw)), Decimal('0'))
     except InvalidOperation:
         discount = Decimal('0')
 
@@ -607,11 +615,20 @@ def checkout_order(request, order_id):
         if not order.items.exists():
             return _response(False, 'Order has no items', status=400)
 
-        # Apply discount and recompute
+        # Apply discount and recompute grand total
         if discount > 0:
             order.discount_amount = discount
             order.grand_total = max(order.subtotal + order.tax_amount - discount, Decimal('0'))
             order.save(update_fields=['discount_amount', 'grand_total'])
+
+        # Validate total paid covers the bill
+        total_paid = sum(p['amount'] for p in parsed)
+        if total_paid < order.grand_total - Decimal('0.01'):
+            return _response(
+                False,
+                f'Total paid (NPR {total_paid}) is less than order total (NPR {order.grand_total})',
+                status=400,
+            )
 
         # Deduct stock if not already confirmed
         if order.status == Order.StatusChoices.OPEN:
@@ -620,16 +637,17 @@ def checkout_order(request, order_id):
             except StockError:
                 pass  # Don't block payment for missing recipes
 
-        # Record payment
-        Payment.objects.create(order=order, method=method, amount=amount, txn_ref=txn_ref)
+        # Record one Payment row per method
+        for p in parsed:
+            Payment.objects.create(order=order, method=p['method'], amount=p['amount'], txn_ref=p['txn_ref'])
 
-        # Mark as paid
         order.status = Order.StatusChoices.PAID
         order.payment_status = Order.PaymentStatusChoices.PAID
         order.updated_at = timezone.now()
         order.save(update_fields=['status', 'payment_status', 'updated_at'])
 
-    _audit('PAYMENT', 'checkout', f'Order {order.order_no} paid NPR {amount} via {method}', order.id)
+    summary = ', '.join(f"{p['method']} NPR {p['amount']}" for p in parsed)
+    _audit('PAYMENT', 'checkout', f'Order {order.order_no} paid: {summary}', order.id)
     return _response(True, 'Payment successful', _order_payload(order))
 
 
@@ -1027,4 +1045,192 @@ def report_day_close(request):
         'gross_sales': str(agg['total'] or 0),
         'cash_total': str(cash_total),
         'fonepay_total': str(fonepay_total),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Credit System
+# ---------------------------------------------------------------------------
+
+@login_required
+def credit_view(request):
+    return render(request, 'core/credit.html')
+
+
+def _credit_balance(account):
+    agg = account.records.aggregate(
+        credit=Sum('amount', filter=Q(record_type='CREDIT')),
+        repaid=Sum('amount', filter=Q(record_type='REPAYMENT')),
+    )
+    credit = agg['credit'] or Decimal('0')
+    repaid = agg['repaid'] or Decimal('0')
+    return credit, repaid, credit - repaid
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['POST'])
+def credit_checkout(request, order_id):
+    """Close an order as credit — marks it PAID and records a CreditRecord."""
+    body = _json_body(request)
+    if body is None:
+        return _response(False, 'Invalid JSON', status=400)
+
+    customer_name = body.get('customer_name', '').strip()
+    if not customer_name:
+        return _response(False, 'Customer name is required', status=400)
+
+    try:
+        amount = Decimal(str(body.get('amount', '')))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return _response(False, 'Invalid amount', status=400)
+
+    phone = body.get('phone', '').strip()
+    notes = body.get('notes', '').strip()
+    discount_raw = body.get('discount', '0')
+    try:
+        discount = max(Decimal(str(discount_raw)), Decimal('0'))
+    except InvalidOperation:
+        discount = Decimal('0')
+
+    with transaction.atomic():
+        order = get_object_or_404(Order.objects.select_for_update(), pk=order_id)
+        if order.status == Order.StatusChoices.PAID:
+            return _response(False, 'Order already paid', status=400)
+        if order.status == Order.StatusChoices.CANCELLED:
+            return _response(False, 'Order is cancelled', status=400)
+        if not order.items.exists():
+            return _response(False, 'Order has no items', status=400)
+
+        if discount > 0:
+            order.discount_amount = discount
+            order.grand_total = max(order.subtotal + order.tax_amount - discount, Decimal('0'))
+            order.save(update_fields=['discount_amount', 'grand_total'])
+
+        if order.status == Order.StatusChoices.OPEN:
+            try:
+                consume_stock_for_order(order)
+            except StockError:
+                pass
+
+        # Find or create the credit account (case-insensitive match)
+        try:
+            account = CreditAccount.objects.get(name__iexact=customer_name)
+        except CreditAccount.DoesNotExist:
+            account = CreditAccount.objects.create(name=customer_name, phone=phone)
+        if phone and not account.phone:
+            account.phone = phone
+            account.save(update_fields=['phone', 'updated_at'])
+
+        CreditRecord.objects.create(
+            account=account,
+            record_type=CreditRecord.RecordType.CREDIT,
+            amount=amount,
+            order=order,
+            notes=notes,
+        )
+
+        order.status = Order.StatusChoices.PAID
+        order.payment_status = Order.PaymentStatusChoices.PAID
+        order.updated_at = timezone.now()
+        order.save(update_fields=['status', 'payment_status', 'updated_at'])
+
+    _audit('PAYMENT', 'credit', f'Order {order.order_no} credited NPR {amount} to {customer_name}', order.id)
+    return _response(True, f'Recorded as credit for {customer_name}', _order_payload(order))
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def credit_accounts(request):
+    accounts = CreditAccount.objects.prefetch_related('records').order_by('name')
+    result = []
+    for a in accounts:
+        credit, repaid, balance = _credit_balance(a)
+        result.append({
+            'id': a.id,
+            'name': a.name,
+            'phone': a.phone,
+            'total_credit': str(credit),
+            'total_repaid': str(repaid),
+            'balance': str(balance),
+        })
+    return _response(True, 'OK', result)
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def credit_account_detail(request, account_id):
+    account = get_object_or_404(CreditAccount, pk=account_id)
+    credit, repaid, balance = _credit_balance(account)
+    records = [{
+        'id': r.id,
+        'record_type': r.record_type,
+        'amount': str(r.amount),
+        'order_no': r.order.order_no if r.order_id else None,
+        'payment_method': r.payment_method,
+        'notes': r.notes,
+        'created_at': r.created_at.isoformat(),
+    } for r in account.records.select_related('order').all()]
+    return _response(True, 'OK', {
+        'id': account.id,
+        'name': account.name,
+        'phone': account.phone,
+        'total_credit': str(credit),
+        'total_repaid': str(repaid),
+        'balance': str(balance),
+        'records': records,
+    })
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['POST'])
+def credit_repay(request, account_id):
+    body = _json_body(request)
+    if body is None:
+        return _response(False, 'Invalid JSON', status=400)
+
+    account = get_object_or_404(CreditAccount, pk=account_id)
+    _, _, balance = _credit_balance(account)
+
+    if balance <= 0:
+        return _response(False, 'No outstanding credit balance', status=400)
+
+    try:
+        amount = Decimal(str(body.get('amount', '')))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return _response(False, 'Invalid amount', status=400)
+
+    if amount > balance + Decimal('0.01'):
+        return _response(
+            False, f'Repayment NPR {amount} exceeds outstanding balance NPR {balance}', status=400
+        )
+
+    payment_method = body.get('payment_method', '').upper() or 'CASH'
+    notes = body.get('notes', '').strip()
+
+    CreditRecord.objects.create(
+        account=account,
+        record_type=CreditRecord.RecordType.REPAYMENT,
+        amount=min(amount, balance),
+        payment_method=payment_method,
+        notes=notes,
+    )
+
+    new_balance = balance - amount
+    _audit(
+        'PAYMENT', 'credit_repay',
+        f'{account.name} repaid NPR {amount} via {payment_method}. Balance: NPR {new_balance}',
+        str(account.id),
+    )
+    return _response(True, f'Repayment recorded. Remaining balance: NPR {max(new_balance, Decimal("0"))}', {
+        'account_id': account.id,
+        'repaid': str(amount),
+        'new_balance': str(max(new_balance, Decimal('0'))),
     })

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.safestring import mark_safe
 from .models import (
-    AuditLog, Category, Ingredient, InventoryMovement,
+    AuditLog, Category, CreditAccount, CreditRecord, Ingredient, InventoryMovement,
     Order, OrderItem, Payment, Product, Recipe,
     Shift, StockReservation, Table,
 )
@@ -98,6 +98,29 @@ class ShiftAdmin(admin.ModelAdmin):
     list_display = ('id', 'staff_name', 'counter_name', 'status', 'opening_cash', 'closing_cash_actual', 'opened_at')
     list_filter = ('status',)
     readonly_fields = ('opened_at',)
+
+
+# ── Credit ────────────────────────────────────────────────────────────────────
+class CreditRecordInline(admin.TabularInline):
+    model = CreditRecord
+    extra = 0
+    fields = ('record_type', 'amount', 'payment_method', 'order', 'notes', 'created_at')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(CreditAccount)
+class CreditAccountAdmin(admin.ModelAdmin):
+    list_display = ('name', 'phone', 'created_at')
+    search_fields = ('name', 'phone')
+    inlines = [CreditRecordInline]
+
+
+@admin.register(CreditRecord)
+class CreditRecordAdmin(admin.ModelAdmin):
+    list_display = ('account', 'record_type', 'amount', 'payment_method', 'order', 'created_at')
+    list_filter = ('record_type', 'payment_method', 'created_at')
+    search_fields = ('account__name',)
+    readonly_fields = ('created_at',)
 
 
 # ── Audit Log (read-only) ─────────────────────────────────────────────────────

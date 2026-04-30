@@ -42,4 +42,10 @@ urlpatterns = [
     path('orders/<int:order_id>/payment', views.add_payment, name='add_payment'),
     path('orders/<int:order_id>/checkout', views.checkout_order, name='checkout_order'),
     path('orders/<int:order_id>/close', views.close_order, name='close_order'),
+    path('orders/<int:order_id>/credit', views.credit_checkout, name='credit_checkout'),
+
+    # Credit accounts
+    path('credit/accounts', views.credit_accounts, name='credit_accounts'),
+    path('credit/accounts/<int:account_id>', views.credit_account_detail, name='credit_account_detail'),
+    path('credit/accounts/<int:account_id>/repay', views.credit_repay, name='credit_repay'),
 ]

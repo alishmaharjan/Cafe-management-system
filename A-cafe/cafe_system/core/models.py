@@ -284,6 +284,44 @@ class Shift(BaseTimeModel):
         return f'Shift #{self.id} ({self.status}) - {self.staff_name or "unknown"}'
 
 
+class CreditAccount(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class CreditRecord(models.Model):
+    class RecordType(models.TextChoices):
+        CREDIT = 'CREDIT', 'Credit'
+        REPAYMENT = 'REPAYMENT', 'Repayment'
+
+    account = models.ForeignKey(CreditAccount, on_delete=models.PROTECT, related_name='records')
+    record_type = models.CharField(max_length=10, choices=RecordType.choices)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    order = models.ForeignKey(
+        'Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='credit_records'
+    )
+    payment_method = models.CharField(max_length=20, blank=True)
+    notes = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='credit_record_amount_gt_zero')
+        ]
+
+    def __str__(self):
+        return f'{self.record_type} NPR {self.amount} — {self.account.name}'
+
+
 class AuditLog(models.Model):
     class EventTypeChoices(models.TextChoices):
         ORDER = 'ORDER', 'Order'

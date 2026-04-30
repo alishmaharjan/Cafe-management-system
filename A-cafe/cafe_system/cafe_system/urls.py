@@ -11,6 +11,7 @@ urlpatterns = [
     path('inventory/', views.inventory_view, name='inventory'),
     path('reports/', views.reports_view, name='reports'),
     path('shifts/', views.shifts_view, name='shifts'),
+    path('credit/', views.credit_view, name='credit'),
     path('admin/', admin.site.urls),
     path('api/', include('core.urls')),
 ]

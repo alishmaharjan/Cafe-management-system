@@ -18,11 +18,13 @@ const pos = {
 };
 
 // ── Bootstrap modals ──────────────────────────────────────────────────────
-let cashModal, fonepayModal, receiptModal;
+let cashModal, fonepayModal, receiptModal, splitModal, creditModal;
 document.addEventListener('DOMContentLoaded', () => {
   cashModal     = new bootstrap.Modal(document.getElementById('cashModal'));
   fonepayModal  = new bootstrap.Modal(document.getElementById('fonepayModal'));
   receiptModal  = new bootstrap.Modal(document.getElementById('receiptModal'));
+  splitModal    = new bootstrap.Modal(document.getElementById('splitModal'));
+  creditModal   = new bootstrap.Modal(document.getElementById('creditModal'));
   init();
 });
 
@@ -336,10 +338,41 @@ function updateTotalsDisplay() {
 function setPayBtnsEnabled(enabled) {
   document.getElementById('cashBtn').disabled        = !enabled;
   document.getElementById('fonepayBtn').disabled     = !enabled;
+  document.getElementById('splitBtn').disabled       = !enabled;
+  document.getElementById('creditBtn').disabled      = !enabled;
   document.getElementById('cancelOrderBtn').disabled = !enabled;
 }
 
-// ── Payment ───────────────────────────────────────────────────────────────
+// ── Payment core ──────────────────────────────────────────────────────────
+// payments = [{method, amount, txn_ref?}, ...]
+async function processPayment(payments) {
+  if (!pos.orderId) { showAlert('No active order.'); return; }
+  try {
+    const order = await apiPost(`/orders/${pos.orderId}/checkout`, {
+      payments: payments.map(p => ({
+        method:  p.method,
+        amount:  parseFloat(p.amount).toFixed(2),
+        txn_ref: p.txn_ref || '',
+      })),
+      discount: pos.discountAmount.toFixed(2),
+    });
+    showReceipt(order);
+    clearCartState();
+    pos.orderId   = null;
+    pos.orderNo   = null;
+    pos.cartItems = [];
+    renderCart();
+    updateCartHeader();
+    setPayBtnsEnabled(false);
+    loadTables();
+    const label = payments.map(p => p.method).join(' + ');
+    showAlert(`Payment successful! Order ${order.order_no} paid via ${label}.`, 'success');
+  } catch (err) {
+    showAlert(err.message);
+  }
+}
+
+// ── Cash ─────────────────────────────────────────────────────────────────
 function openCashModal() {
   document.getElementById('cashAmountDisplay').textContent = fmtNPR(pos.grandTotal);
   document.getElementById('cashTendered').value = '';
@@ -365,10 +398,11 @@ async function confirmCashPayment() {
   if (tendered < pos.grandTotal) {
     if (!confirm(`Amount tendered (NPR ${tendered}) is less than total (NPR ${pos.grandTotal.toFixed(2)}). Proceed?`)) return;
   }
-  await processPayment('CASH', pos.grandTotal, '');
   cashModal.hide();
+  await processPayment([{method: 'CASH', amount: pos.grandTotal}]);
 }
 
+// ── FonePay ───────────────────────────────────────────────────────────────
 function openFonepayModal() {
   document.getElementById('fonepayAmountDisplay').textContent = fmtNPR(pos.grandTotal);
   document.getElementById('fonepayTxnRef').value = '';
@@ -377,32 +411,82 @@ function openFonepayModal() {
 
 async function confirmFonepayPayment() {
   const txnRef = document.getElementById('fonepayTxnRef').value.trim();
-  await processPayment('FONEPAY', pos.grandTotal, txnRef);
   fonepayModal.hide();
+  await processPayment([{method: 'FONEPAY', amount: pos.grandTotal, txn_ref: txnRef}]);
 }
 
-async function processPayment(method, amount, txnRef) {
+// ── Split Payment ─────────────────────────────────────────────────────────
+function openSplitModal() {
+  document.getElementById('splitTotalDisplay').textContent = fmtNPR(pos.grandTotal);
+  document.getElementById('splitCashInput').value = '';
+  document.getElementById('splitFonepayAmount').textContent = fmtNPR(pos.grandTotal);
+  document.getElementById('splitTxnRef').value = '';
+  document.getElementById('splitCashInput').max = pos.grandTotal.toFixed(2);
+  splitModal.show();
+}
+
+function calcSplitRemainder() {
+  const cash      = Math.max(parseFloat(document.getElementById('splitCashInput').value) || 0, 0);
+  const remaining = Math.max(pos.grandTotal - cash, 0);
+  document.getElementById('splitFonepayAmount').textContent = fmtNPR(remaining);
+}
+
+async function confirmSplitPayment() {
+  const cash    = Math.max(parseFloat(document.getElementById('splitCashInput').value) || 0, 0);
+  const fonepay = Math.max(pos.grandTotal - cash, 0);
+  const txnRef  = document.getElementById('splitTxnRef').value.trim();
+
+  if (cash <= 0 && fonepay <= 0) {
+    showAlert('Enter a cash amount.', 'warning'); return;
+  }
+  if (cash + fonepay < pos.grandTotal - 0.01) {
+    showAlert('Split amounts do not cover the total.', 'warning'); return;
+  }
+
+  const payments = [];
+  if (cash > 0)    payments.push({method: 'CASH',    amount: cash});
+  if (fonepay > 0) payments.push({method: 'FONEPAY', amount: fonepay, txn_ref: txnRef});
+
+  splitModal.hide();
+  await processPayment(payments);
+}
+
+// ── Credit ────────────────────────────────────────────────────────────────
+async function openCreditModal() {
+  document.getElementById('creditAmountDisplay').textContent = fmtNPR(pos.grandTotal);
+  document.getElementById('creditCustomerName').value = '';
+  document.getElementById('creditCustomerPhone').value = '';
+  document.getElementById('creditNotes').value = '';
+  // Populate autocomplete list with existing customers
+  try {
+    const accounts = await apiGet('/credit/accounts');
+    const dl = document.getElementById('creditCustomerList');
+    dl.innerHTML = accounts.map(a => `<option value="${escHtml(a.name)}">`).join('');
+  } catch (_) {}
+  creditModal.show();
+}
+
+async function confirmCreditPayment() {
+  const name = document.getElementById('creditCustomerName').value.trim();
+  if (!name) { showAlert('Customer name is required.', 'warning'); return; }
+  const phone = document.getElementById('creditCustomerPhone').value.trim();
+  const notes = document.getElementById('creditNotes').value.trim();
   if (!pos.orderId) { showAlert('No active order.'); return; }
   try {
-    const order = await apiPost(`/orders/${pos.orderId}/checkout`, {
-      method,
-      amount: amount.toFixed(2),
-      txn_ref: txnRef,
+    const order = await apiPost(`/orders/${pos.orderId}/credit`, {
+      customer_name: name,
+      phone,
+      notes,
+      amount: pos.grandTotal.toFixed(2),
       discount: pos.discountAmount.toFixed(2),
     });
+    creditModal.hide();
     showReceipt(order);
     clearCartState();
-    pos.orderId  = null;
-    pos.orderNo  = null;
-    pos.cartItems = [];
-    renderCart();
-    updateCartHeader();
-    setPayBtnsEnabled(false);
-    loadTables();
-    showAlert(`Payment successful! Order ${order.order_no} paid via ${method}.`, 'success');
-  } catch (err) {
-    showAlert(err.message);
-  }
+    pos.orderId = null; pos.orderNo = null; pos.cartItems = [];
+    renderCart(); updateCartHeader(); setPayBtnsEnabled(false); loadTables();
+    showAlert(`Credit of NPR ${pos.grandTotal.toFixed(2)} recorded for ${name}.`, 'success');
+  } catch (err) { showAlert(err.message); }
 }
 
 // ── Cancel Order ──────────────────────────────────────────────────────────
