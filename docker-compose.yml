@@ -1,15 +1,36 @@
 services:
+
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB:       chiya_garden
+      POSTGRES_USER:     chiya
+      POSTGRES_PASSWORD: chiya_secure_2024
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chiya -d chiya_garden"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   web:
     build: .
     ports:
       - "8000:8000"
-    volumes:
-      - cafe_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      SECRET_KEY: "change-this-to-a-long-random-string-in-production"
-      DEBUG: "False"
-      DB_PATH: "/data/chiya_garden.sqlite3"
+      SECRET_KEY:  "change-this-to-a-long-random-string-in-production"
+      DEBUG:       "False"
+      DB_NAME:     chiya_garden
+      DB_USER:     chiya
+      DB_PASSWORD: chiya_secure_2024
+      DB_HOST:     db
+      DB_PORT:     "5432"
     restart: unless-stopped
 
 volumes:
-  cafe_data:
+  postgres_data:

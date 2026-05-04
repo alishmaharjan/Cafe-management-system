@@ -55,8 +55,12 @@ WSGI_APPLICATION = 'cafe_system.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.environ.get('DB_PATH', str(BASE_DIR / 'chiya_garden.sqlite3')),
+        'ENGINE':   'django.db.backends.postgresql',
+        'NAME':     os.environ.get('DB_NAME',     'chiya_garden'),
+        'USER':     os.environ.get('DB_USER',     'chiya'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST':     os.environ.get('DB_HOST',     'localhost'),
+        'PORT':     os.environ.get('DB_PORT',     '5432'),
     }
 }
 
