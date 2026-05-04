@@ -72,6 +72,23 @@ def _order_payload(order):
             'txn_ref': p.txn_ref,
             'paid_at': p.paid_at.isoformat(),
         })
+    # Include credit recorded for this order as a synthetic "payment" row.
+    # Credit is stored in CreditRecord (not Payment), but POS receipts expect
+    # a unified list of payment methods.
+    credit_amount = (
+        order.credit_records
+        .filter(record_type=CreditRecord.RecordType.CREDIT)
+        .aggregate(total=Sum('amount'))['total']
+        or Decimal('0')
+    )
+    if credit_amount > 0:
+        payments.append({
+            'id': None,
+            'method': 'CREDIT',
+            'amount': str(credit_amount),
+            'txn_ref': '',
+            'paid_at': (order.updated_at or order.created_at).isoformat(),
+        })
     return {
         'id': order.id,
         'order_no': order.order_no,
@@ -577,7 +594,7 @@ def add_payment(request, order_id):
 @require_http_methods(['POST'])
 def checkout_order(request, order_id):
     """Single-step POS checkout: confirm stock + record payment(s) + close order.
-    Accepts a 'payments' list to support split payments (cash + fonepay)."""
+    Accepts a 'payments' list to support split payments (cash + fonepay + optional credit)."""
     body = _json_body(request)
     if body is None:
         return _response(False, 'Invalid JSON', status=400)
@@ -590,7 +607,8 @@ def checkout_order(request, order_id):
     parsed = []
     for p in raw_payments:
         method = str(p.get('method', '')).upper()
-        if method not in Payment.MethodChoices.values:
+        allowed = set(Payment.MethodChoices.values) | {'CREDIT'}
+        if method not in allowed:
             return _response(False, f'Invalid method: {method}', status=400)
         try:
             amount = Decimal(str(p.get('amount', '')))
@@ -598,7 +616,14 @@ def checkout_order(request, order_id):
                 raise InvalidOperation
         except InvalidOperation:
             return _response(False, f'Invalid amount for {method}', status=400)
-        parsed.append({'method': method, 'amount': amount, 'txn_ref': str(p.get('txn_ref', '') or '')})
+        parsed.append({
+            'method': method,
+            'amount': amount,
+            'txn_ref': str(p.get('txn_ref', '') or ''),
+            'customer_name': str(p.get('customer_name', '') or '').strip(),
+            'phone': str(p.get('phone', '') or '').strip(),
+            'notes': str(p.get('notes', '') or '').strip(),
+        })
 
     discount_raw = body.get('discount', '0')
     try:
@@ -637,9 +662,29 @@ def checkout_order(request, order_id):
             except StockError:
                 pass  # Don't block payment for missing recipes
 
-        # Record one Payment row per method
+        # Record one Payment row per method (except CREDIT, which creates a CreditRecord)
         for p in parsed:
-            Payment.objects.create(order=order, method=p['method'], amount=p['amount'], txn_ref=p['txn_ref'])
+            if p['method'] == 'CREDIT':
+                if not p['customer_name']:
+                    return _response(False, 'Customer name is required for credit payment', status=400)
+                # Find or create the credit account (case-insensitive match)
+                try:
+                    account = CreditAccount.objects.get(name__iexact=p['customer_name'])
+                except CreditAccount.DoesNotExist:
+                    account = CreditAccount.objects.create(name=p['customer_name'], phone=p['phone'])
+                if p['phone'] and not account.phone:
+                    account.phone = p['phone']
+                    account.save(update_fields=['phone', 'updated_at'])
+
+                CreditRecord.objects.create(
+                    account=account,
+                    record_type=CreditRecord.RecordType.CREDIT,
+                    amount=p['amount'],
+                    order=order,
+                    notes=p['notes'],
+                )
+            else:
+                Payment.objects.create(order=order, method=p['method'], amount=p['amount'], txn_ref=p['txn_ref'])
 
         order.status = Order.StatusChoices.PAID
         order.payment_status = Order.PaymentStatusChoices.PAID

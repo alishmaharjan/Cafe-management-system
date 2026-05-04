@@ -353,6 +353,9 @@ async function processPayment(payments) {
         method:  p.method,
         amount:  parseFloat(p.amount).toFixed(2),
         txn_ref: p.txn_ref || '',
+        customer_name: p.customer_name || '',
+        phone: p.phone || '',
+        notes: p.notes || '',
       })),
       discount: pos.discountAmount.toFixed(2),
     });
@@ -419,33 +422,68 @@ async function confirmFonepayPayment() {
 function openSplitModal() {
   document.getElementById('splitTotalDisplay').textContent = fmtNPR(pos.grandTotal);
   document.getElementById('splitCashInput').value = '';
-  document.getElementById('splitFonepayAmount').textContent = fmtNPR(pos.grandTotal);
+  document.getElementById('splitFonepayInput').value = '';
+  document.getElementById('splitCreditInput').value = '';
+  document.getElementById('splitRemainingAmount').textContent = fmtNPR(pos.grandTotal);
   document.getElementById('splitTxnRef').value = '';
   document.getElementById('splitCashInput').max = pos.grandTotal.toFixed(2);
+  document.getElementById('splitFonepayInput').max = pos.grandTotal.toFixed(2);
+  document.getElementById('splitCreditInput').max = pos.grandTotal.toFixed(2);
+  document.getElementById('splitCreditCustomerName').value = '';
+  document.getElementById('splitCreditCustomerPhone').value = '';
+  document.getElementById('splitCreditNotes').value = '';
+  document.getElementById('splitCreditDetails').style.display = 'none';
+  // Populate credit autocomplete list
+  try {
+    apiGet('/credit/accounts').then(accounts => {
+      const dl = document.getElementById('splitCreditCustomerList');
+      dl.innerHTML = accounts.map(a => `<option value="${escHtml(a.name)}">`).join('');
+    }).catch(() => {});
+  } catch (_) {}
   splitModal.show();
 }
 
 function calcSplitRemainder() {
-  const cash      = Math.max(parseFloat(document.getElementById('splitCashInput').value) || 0, 0);
-  const remaining = Math.max(pos.grandTotal - cash, 0);
-  document.getElementById('splitFonepayAmount').textContent = fmtNPR(remaining);
+  const cash    = Math.max(parseFloat(document.getElementById('splitCashInput').value) || 0, 0);
+  const fonepay = Math.max(parseFloat(document.getElementById('splitFonepayInput').value) || 0, 0);
+  const credit  = Math.max(parseFloat(document.getElementById('splitCreditInput').value) || 0, 0);
+  const remaining = pos.grandTotal - (cash + fonepay + credit);
+  document.getElementById('splitRemainingAmount').textContent = fmtNPR(Math.max(remaining, 0));
+  document.getElementById('splitRemainingAmount').style.color = remaining <= 0.01 ? '#27ae60' : '#e74c3c';
+  document.getElementById('splitCreditDetails').style.display = credit > 0 ? 'block' : 'none';
 }
 
 async function confirmSplitPayment() {
   const cash    = Math.max(parseFloat(document.getElementById('splitCashInput').value) || 0, 0);
-  const fonepay = Math.max(pos.grandTotal - cash, 0);
+  const fonepay = Math.max(parseFloat(document.getElementById('splitFonepayInput').value) || 0, 0);
+  const credit  = Math.max(parseFloat(document.getElementById('splitCreditInput').value) || 0, 0);
   const txnRef  = document.getElementById('splitTxnRef').value.trim();
 
-  if (cash <= 0 && fonepay <= 0) {
-    showAlert('Enter a cash amount.', 'warning'); return;
+  if (cash <= 0 && fonepay <= 0 && credit <= 0) {
+    showAlert('Enter at least one amount (Cash / FonePay / Credit).', 'warning'); return;
   }
-  if (cash + fonepay < pos.grandTotal - 0.01) {
+  const total = cash + fonepay + credit;
+  if (total < pos.grandTotal - 0.01) {
     showAlert('Split amounts do not cover the total.', 'warning'); return;
+  }
+  if (total > pos.grandTotal + 0.01) {
+    showAlert('Split amounts exceed the total.', 'warning'); return;
+  }
+
+  let creditName = '';
+  let creditPhone = '';
+  let creditNotes = '';
+  if (credit > 0) {
+    creditName = document.getElementById('splitCreditCustomerName').value.trim();
+    if (!creditName) { showAlert('Credit customer name is required.', 'warning'); return; }
+    creditPhone = document.getElementById('splitCreditCustomerPhone').value.trim();
+    creditNotes = document.getElementById('splitCreditNotes').value.trim();
   }
 
   const payments = [];
   if (cash > 0)    payments.push({method: 'CASH',    amount: cash});
   if (fonepay > 0) payments.push({method: 'FONEPAY', amount: fonepay, txn_ref: txnRef});
+  if (credit > 0)  payments.push({method: 'CREDIT',  amount: credit, customer_name: creditName, phone: creditPhone, notes: creditNotes});
 
   splitModal.hide();
   await processPayment(payments);
