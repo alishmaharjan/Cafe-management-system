@@ -1094,6 +1094,217 @@ def report_day_close(request):
 
 
 # ---------------------------------------------------------------------------
+# API: Extended Reports
+# ---------------------------------------------------------------------------
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def report_orders_detail(request):
+    from django.db.models import Prefetch
+    start_dt, end_dt = _date_range(request)
+    orders_qs = (
+        Order.objects.filter(
+            status=Order.StatusChoices.PAID,
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
+        )
+        .prefetch_related(
+            Prefetch(
+                'items',
+                queryset=OrderItem.objects.filter(
+                    item_status=OrderItem.ItemStatusChoices.OPEN
+                ).select_related('product'),
+            ),
+            'payments',
+        )
+        .order_by('-created_at')
+    )
+    agg = orders_qs.aggregate(total_revenue=Sum('grand_total'), order_count=Count('id'))
+    total_revenue = agg['total_revenue'] or 0
+    order_count = agg['order_count'] or 0
+    avg_order_value = round(total_revenue / order_count, 2) if order_count else 0
+
+    orders_data = []
+    for o in orders_qs:
+        orders_data.append({
+            'order_no': o.order_no,
+            'date': o.created_at.strftime('%Y-%m-%d %H:%M'),
+            'order_type': o.order_type,
+            'table_no': o.table_no or '—',
+            'status': o.status,
+            'payment_status': o.payment_status,
+            'subtotal': str(o.subtotal),
+            'tax_amount': str(o.tax_amount),
+            'discount_amount': str(o.discount_amount),
+            'grand_total': str(o.grand_total),
+            'items': [
+                {
+                    'product': item.product.name,
+                    'qty': item.qty,
+                    'unit_price': str(item.unit_price),
+                    'line_total': str(item.line_total),
+                }
+                for item in o.items.all()
+            ],
+            'payments': [
+                {'method': p.method, 'amount': str(p.amount), 'txn_ref': p.txn_ref or ''}
+                for p in o.payments.all()
+            ],
+        })
+    _audit('REPORT', 'orders-detail', f'Orders detail {start_dt.date()} to {end_dt.date()}')
+    return _response(True, 'OK', {
+        'start_date': start_dt.date().isoformat(),
+        'end_date': end_dt.date().isoformat(),
+        'order_count': order_count,
+        'total_revenue': str(total_revenue),
+        'avg_order_value': str(avg_order_value),
+        'orders': orders_data,
+    })
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def report_orders_export(request):
+    from django.db.models import Prefetch
+    start_dt, end_dt = _date_range(request)
+    orders_qs = (
+        Order.objects.filter(
+            status=Order.StatusChoices.PAID,
+            created_at__gte=start_dt,
+            created_at__lte=end_dt,
+        )
+        .prefetch_related(
+            Prefetch(
+                'items',
+                queryset=OrderItem.objects.filter(
+                    item_status=OrderItem.ItemStatusChoices.OPEN
+                ).select_related('product'),
+            ),
+            'payments',
+        )
+        .order_by('-created_at')
+    )
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = (
+        f'attachment; filename="orders_detail_{start_dt.date()}_{end_dt.date()}.csv"'
+    )
+    writer = csv.writer(response)
+    writer.writerow([
+        'Order No', 'Date', 'Type', 'Table', 'Status',
+        'Product', 'Qty', 'Unit Price', 'Line Total',
+        'Subtotal', 'Tax', 'Discount', 'Grand Total', 'Payment Methods',
+    ])
+    for o in orders_qs:
+        methods = ' + '.join(f'{p.method}({p.amount})' for p in o.payments.all())
+        items = list(o.items.all())
+        if not items:
+            writer.writerow([
+                o.order_no, o.created_at.strftime('%Y-%m-%d %H:%M'),
+                o.order_type, o.table_no or '-', o.status,
+                '(no items)', '', '', '',
+                o.subtotal, o.tax_amount, o.discount_amount, o.grand_total, methods,
+            ])
+            continue
+        for idx, item in enumerate(items):
+            if idx == 0:
+                writer.writerow([
+                    o.order_no, o.created_at.strftime('%Y-%m-%d %H:%M'),
+                    o.order_type, o.table_no or '-', o.status,
+                    item.product.name, item.qty, item.unit_price, item.line_total,
+                    o.subtotal, o.tax_amount, o.discount_amount, o.grand_total, methods,
+                ])
+            else:
+                writer.writerow([
+                    '', '', '', '', '',
+                    item.product.name, item.qty, item.unit_price, item.line_total,
+                    '', '', '', '', '',
+                ])
+    return response
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def report_all_products(request):
+    start_dt, end_dt = _date_range(request)
+    sort_by = request.GET.get('sort', 'revenue')
+    order_by = '-revenue' if sort_by == 'revenue' else '-total_qty'
+    products_qs = list(
+        OrderItem.objects.filter(
+            order__status=Order.StatusChoices.PAID,
+            order__created_at__gte=start_dt,
+            order__created_at__lte=end_dt,
+            item_status=OrderItem.ItemStatusChoices.OPEN,
+        )
+        .values('product__id', 'product__name', 'product__sku', 'product__category__name', 'product__price')
+        .annotate(total_qty=Sum('qty'), revenue=Sum('line_total'))
+        .order_by(order_by)
+    )
+    grand_qty = sum(p['total_qty'] for p in products_qs)
+    grand_revenue = sum(p['revenue'] or 0 for p in products_qs)
+    _audit('REPORT', 'all-products', f'All products {start_dt.date()} to {end_dt.date()}')
+    return _response(True, 'OK', {
+        'start_date': start_dt.date().isoformat(),
+        'end_date': end_dt.date().isoformat(),
+        'products': [
+            {
+                'product_id': p['product__id'],
+                'product_name': p['product__name'],
+                'sku': p['product__sku'] or '—',
+                'category': p['product__category__name'] or '—',
+                'unit_price': str(p['product__price']),
+                'total_qty': p['total_qty'],
+                'revenue': str(p['revenue'] or 0),
+            }
+            for p in products_qs
+        ],
+        'grand_qty': grand_qty,
+        'grand_revenue': str(grand_revenue),
+    })
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def report_all_products_export(request):
+    start_dt, end_dt = _date_range(request)
+    sort_by = request.GET.get('sort', 'revenue')
+    order_by = '-revenue' if sort_by == 'revenue' else '-total_qty'
+    products_qs = (
+        OrderItem.objects.filter(
+            order__status=Order.StatusChoices.PAID,
+            order__created_at__gte=start_dt,
+            order__created_at__lte=end_dt,
+            item_status=OrderItem.ItemStatusChoices.OPEN,
+        )
+        .values('product__id', 'product__name', 'product__sku', 'product__category__name', 'product__price')
+        .annotate(total_qty=Sum('qty'), revenue=Sum('line_total'))
+        .order_by(order_by)
+    )
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = (
+        f'attachment; filename="products_sold_{start_dt.date()}_{end_dt.date()}.csv"'
+    )
+    writer = csv.writer(response)
+    writer.writerow(['Product ID', 'Product Name', 'SKU', 'Category', 'Unit Price', 'Qty Sold', 'Revenue'])
+    grand_qty = 0
+    grand_revenue = 0
+    for p in products_qs:
+        rev = p['revenue'] or 0
+        grand_qty += p['total_qty']
+        grand_revenue += rev
+        writer.writerow([
+            p['product__id'], p['product__name'], p['product__sku'] or '—',
+            p['product__category__name'] or '—', p['product__price'],
+            p['total_qty'], rev,
+        ])
+    writer.writerow(['', 'GRAND TOTAL', '', '', '', grand_qty, grand_revenue])
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Credit System
 # ---------------------------------------------------------------------------
 

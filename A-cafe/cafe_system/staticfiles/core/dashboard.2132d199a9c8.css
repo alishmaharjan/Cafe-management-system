@@ -1,0 +1,169 @@
+* {
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    margin: 0;
+    background: #f5f7fa;
+    color: #1f2937;
+}
+
+header {
+    background: #111827;
+    color: #fff;
+    padding: 16px 20px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+header p {
+    margin: 4px 0 0;
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px;
+    padding: 12px;
+}
+
+.tabs {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: #e5e7eb;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    background: #374151;
+}
+
+.tab-btn.active {
+    background: #1d4ed8;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 14px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.footer-card {
+    margin: 0 12px 12px;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+label {
+    font-size: 13px;
+    color: #374151;
+}
+
+input,
+select,
+button {
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+button {
+    cursor: pointer;
+    background: #2563eb;
+    color: white;
+    border: none;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+ul {
+    margin: 8px 0 12px;
+    padding-left: 18px;
+}
+
+#ordersList,
+#inventoryList,
+#salesReportView,
+#inventoryReportView,
+#shiftView,
+#dayCloseView,
+#overviewCards,
+#activityLogList {
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+#logPanel {
+    max-height: 180px;
+    overflow: auto;
+    background: #0b1220;
+    color: #d1fae5;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.order-row {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 6px 0;
+}
+
+.order-row button {
+    margin-left: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: #fff;
+    margin-left: 6px;
+}
+
+.status-open, .status-confirmed, .status-preparing, .status-served {
+    background: #2563eb;
+}
+
+.status-paid {
+    background: #16a34a;
+}
+
+.status-cancelled {
+    background: #dc2626;
+}

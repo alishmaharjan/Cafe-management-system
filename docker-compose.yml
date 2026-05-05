@@ -16,7 +16,11 @@ services:
       retries: 10
 
   web:
-    build: .
+    build:
+      context: .
+      network: host
+    volumes:
+      - ./A-cafe/cafe_system:/app
     ports:
       - "8000:8000"
     depends_on:

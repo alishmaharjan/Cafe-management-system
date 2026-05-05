@@ -1,0 +1,144 @@
+/* ── Chiya Garden — Brand Theme (based on logo) ───────────────────────── */
+:root {
+  /* Logo palette */
+  --cg-dark:       #1a0800;   /* logo background — very dark warm black  */
+  --cg-orange:     #c85a00;   /* logo primary orange                      */
+  --cg-amber:      #e87a1e;   /* logo lighter amber                       */
+  --cg-green:      #2d7a35;   /* logo leaf green                          */
+  --cg-green-dark: #1e5626;
+  --cg-gold:       #d4a017;   /* logo gold border ring                    */
+  --cg-cream:      #faf7f0;   /* page background                          */
+}
+
+body {
+  background: var(--cg-cream);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Navbar ────────────────────────────────────────────────────────────── */
+.cg-navbar {
+  background: var(--cg-dark);
+  border-bottom: 3px solid var(--cg-gold);
+  min-height: 56px;
+}
+
+.cg-brand {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--cg-gold) !important;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cg-brand img {
+  height: 38px;
+  width: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--cg-gold);
+  object-fit: cover;
+}
+
+.cg-navbar .nav-link {
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.cg-navbar .nav-link:hover,
+.cg-navbar .nav-link.fw-bold {
+  background: rgba(212, 160, 23, 0.2);
+  color: var(--cg-gold) !important;
+}
+
+.cg-navbar .btn-outline-light {
+  border-color: rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.8);
+  font-size: 0.8rem;
+}
+.cg-navbar .btn-outline-light:hover {
+  background: rgba(255,255,255,0.15);
+  border-color: var(--cg-gold);
+  color: var(--cg-gold);
+}
+
+/* ── Card header accent ────────────────────────────────────────────────── */
+.cg-card-header {
+  background: var(--cg-dark);
+  color: var(--cg-gold);
+  border-bottom: 2px solid var(--cg-gold);
+}
+
+/* ── Button overrides ──────────────────────────────────────────────────── */
+.btn-success {
+  background: var(--cg-orange) !important;
+  border-color: var(--cg-orange) !important;
+  color: #fff !important;
+}
+.btn-success:hover {
+  background: var(--cg-amber) !important;
+  border-color: var(--cg-amber) !important;
+}
+.btn-outline-success {
+  color: var(--cg-orange) !important;
+  border-color: var(--cg-orange) !important;
+}
+.btn-outline-success:hover {
+  background: var(--cg-orange) !important;
+  color: #fff !important;
+}
+
+/* ── POS: table buttons ────────────────────────────────────────────────── */
+/* free tables → dark green; occupied → red; selected → gold outline     */
+
+/* ── POS: category buttons ─────────────────────────────────────────────── */
+/* active category uses orange brand color */
+
+/* ── POS: product cards ─────────────────────────────────────────────────── */
+/* price text uses orange */
+
+/* ── POS: cart header ──────────────────────────────────────────────────── */
+/* already uses --cg-green in pos.html; override to dark */
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--cg-orange); border-radius: 4px; }
+
+/* ── Utility ───────────────────────────────────────────────────────────── */
+.text-cg   { color: var(--cg-orange) !important; }
+.text-gold { color: var(--cg-gold)   !important; }
+
+/* ── Alert banner ──────────────────────────────────────────────────────── */
+#alertBanner { border-radius: 0; z-index: 1050; font-size: 0.9rem; }
+
+/* ── HTML tables ────────────────────────────────────────────────────────── */
+.table thead th {
+  background: #f5ede0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid #e0cdb0;
+}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge { font-weight: 600; }
+
+/* ── Login page ─────────────────────────────────────────────────────────── */
+.btn-login {
+  background: var(--cg-orange);
+  border-color: var(--cg-orange);
+  color: #fff;
+}
+.btn-login:hover {
+  background: var(--cg-amber);
+  border-color: var(--cg-amber);
+  color: #fff;
+}
+.btn-login:focus {
+  box-shadow: 0 0 0 3px rgba(200, 90, 0, 0.35);
+}

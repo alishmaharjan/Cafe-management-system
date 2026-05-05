@@ -26,6 +26,10 @@ urlpatterns = [
     path('reports/inventory', views.report_inventory, name='report_inventory'),
     path('reports/inventory/export', views.report_inventory_export, name='report_inventory_export'),
     path('reports/day-close', views.report_day_close, name='report_day_close'),
+    path('reports/orders-detail', views.report_orders_detail, name='report_orders_detail'),
+    path('reports/orders-detail/export', views.report_orders_export, name='report_orders_export'),
+    path('reports/all-products', views.report_all_products, name='report_all_products'),
+    path('reports/all-products/export', views.report_all_products_export, name='report_all_products_export'),
 
     # Shifts
     path('shifts/current', views.current_shift, name='current_shift'),
