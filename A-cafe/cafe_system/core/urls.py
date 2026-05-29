@@ -19,6 +19,13 @@ urlpatterns = [
     path('inventory/purchase', views.inventory_purchase, name='inventory_purchase'),
     path('inventory/adjustment', views.inventory_adjustment, name='inventory_adjustment'),
     path('inventory/movements', views.inventory_movements, name='inventory_movements'),
+  path('inventory/direct-sale-products', views.direct_sale_products, name='direct_sale_products'),
+  path('inventory/direct-sale-products/add-stock', views.direct_sale_add_stock, name='direct_sale_add_stock'),
+  path('inventory/direct-sale-products/adjust-stock', views.direct_sale_adjust_stock, name='direct_sale_adjust_stock'),
+  path('inventory/recipe-products', views.recipe_products, name='recipe_products'),
+  path('inventory/recipe-usage', views.recipe_usage_estimate, name='recipe_usage_estimate'),
+  path('inventory/low-stock-alerts', views.low_stock_alerts, name='low_stock_alerts'),
+  path('inventory/product-movements', views.product_stock_movements, name='product_stock_movements'),
 
     # Reports
     path('reports/sales', views.report_sales, name='report_sales'),

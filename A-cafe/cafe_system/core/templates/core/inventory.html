@@ -3,78 +3,217 @@
 
 {% block content %}
 <div class="container-fluid py-3 px-4">
-  <h4 class="fw-bold mb-3"><i class="bi bi-boxes text-success"></i> Inventory</h4>
-  <div class="row g-3">
+  <h4 class="fw-bold mb-3"><i class="bi bi-boxes text-success"></i> Inventory Management</h4>
 
-    <!-- Stock Levels -->
-    <div class="col-md-7">
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
-          <span>Stock Levels</span>
-          <button class="btn btn-outline-success btn-sm" onclick="loadIngredients()"><i class="bi bi-arrow-clockwise"></i></button>
+  <ul class="nav nav-tabs mb-3" id="inventoryTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="direct-tab" data-bs-toggle="tab" data-bs-target="#directPanel" type="button">Direct Sale Products</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="recipe-tab" data-bs-toggle="tab" data-bs-target="#recipePanel" type="button">Recipe-Based Products</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="ingredients-tab" data-bs-toggle="tab" data-bs-target="#ingredientsPanel" type="button">Ingredients Inventory</button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="inventoryTabContent">
+
+    <!-- A. Direct Sale Products -->
+    <div class="tab-pane fade show active" id="directPanel" role="tabpanel">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between">
+              <span>Direct Sale Stock</span>
+              <button class="btn btn-outline-success btn-sm" onclick="loadDirectProducts()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>Product</th><th class="text-end">Stock</th><th class="text-end">Min Alert</th><th>Status</th></tr></thead>
+                <tbody id="directProductsBody"><tr><td colspan="4" class="text-muted small p-3">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card border-0 shadow-sm mt-3">
+            <div class="card-header bg-white fw-semibold py-2"><i class="bi bi-exclamation-triangle text-danger"></i> Low Stock Alerts</div>
+            <div class="card-body p-0" style="max-height:200px;overflow-y:auto;">
+              <ul class="list-group list-group-flush" id="lowStockAlertsList"><li class="list-group-item text-muted small">Loading...</li></ul>
+            </div>
+          </div>
         </div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-hover mb-0" id="ingredientsTable">
-            <thead><tr><th>#</th><th>Ingredient</th><th>Unit</th><th class="text-end">Current Qty</th><th class="text-end">Min Alert</th><th>Status</th></tr></thead>
-            <tbody id="ingredientsBody"><tr><td colspan="6" class="text-muted small p-3">Loading...</td></tr></tbody>
-          </table>
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-plus-circle"></i> Add Stock</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Product</label>
+                <select class="form-select form-select-sm" id="directAddProduct"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Quantity</label>
+                <input type="number" class="form-control form-control-sm" id="directAddQty" min="1" step="1">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Note</label>
+                <input type="text" class="form-control form-control-sm" id="directAddNote" placeholder="Delivery, restock...">
+              </div>
+              <button class="btn btn-success btn-sm w-100" onclick="submitDirectAddStock()"><i class="bi bi-check-lg"></i> Add Stock</button>
+            </div>
+          </div>
+          <div class="card border-0 shadow-sm mt-3">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-sliders"></i> Manual Adjustment</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Product</label>
+                <select class="form-select form-select-sm" id="directAdjustProduct"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Qty Change</label>
+                <input type="number" class="form-control form-control-sm" id="directAdjustQty" step="1" placeholder="+ add / − reduce">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Reason</label>
+                <input type="text" class="form-control form-control-sm" id="directAdjustNote" placeholder="Count correction, spoilage...">
+              </div>
+              <button class="btn btn-warning btn-sm w-100" onclick="submitDirectAdjustStock()"><i class="bi bi-check-lg"></i> Apply Adjustment</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Actions -->
-    <div class="col-md-5">
-      <!-- Purchase Stock -->
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-bag-plus"></i> Add Stock Purchase</div>
-        <div class="card-body">
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Ingredient</label>
-            <select class="form-select form-select-sm" id="purchaseIngredient"></select>
+    <!-- B. Recipe-Based Products -->
+    <div class="tab-pane fade" id="recipePanel" role="tabpanel">
+      <div class="row g-3">
+        <div class="col-md-7">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between">
+              <span>Recipes &amp; Ingredient Mapping</span>
+              <button class="btn btn-outline-success btn-sm" onclick="loadRecipeProducts()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body" id="recipeProductsBody" style="max-height:420px;overflow-y:auto;">
+              <p class="text-muted small">Loading...</p>
+            </div>
           </div>
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Quantity</label>
-            <input type="number" class="form-control form-control-sm" id="purchaseQty" min="0.001" step="0.001" placeholder="e.g. 5">
+        </div>
+        <div class="col-md-5">
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-link-45deg"></i> Add / Update Recipe</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Product</label>
+                <select class="form-select form-select-sm" id="recipeProductSelect"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Ingredient</label>
+                <select class="form-select form-select-sm" id="recipeIngredientSelect"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Qty per item</label>
+                <input type="number" class="form-control form-control-sm" id="recipeQtyPerItem" min="0.001" step="0.001">
+              </div>
+              <button class="btn btn-primary btn-sm w-100" onclick="submitRecipeMapping()"><i class="bi bi-check-lg"></i> Save Mapping</button>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Note <span class="text-muted fw-normal">(optional)</span></label>
-            <input type="text" class="form-control form-control-sm" id="purchaseNote" placeholder="Supplier, batch no...">
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-sliders"></i> Manual Adjustment</div>
+            <div class="card-body">
+              <p class="text-muted small mb-2">Correct ingredient stock used by recipe products (e.g. after physical count).</p>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Ingredient</label>
+                <select class="form-select form-select-sm" id="recipeAdjustIngredient"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Qty Change</label>
+                <input type="number" class="form-control form-control-sm" id="recipeAdjustQty" step="0.001" placeholder="+ add / − reduce">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Reason</label>
+                <input type="text" class="form-control form-control-sm" id="recipeAdjustNote" placeholder="Count correction, waste...">
+              </div>
+              <button class="btn btn-warning btn-sm w-100" onclick="submitRecipeAdjustStock()"><i class="bi bi-check-lg"></i> Apply Adjustment</button>
+            </div>
           </div>
-          <button class="btn btn-success btn-sm w-100" onclick="submitPurchase()"><i class="bi bi-check-lg"></i> Record Purchase</button>
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold py-2">Estimated Ingredient Usage (paid orders)</div>
+            <div class="card-body p-0" style="max-height:220px;overflow-y:auto;">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Ingredient</th><th class="text-end">Used</th></tr></thead>
+                <tbody id="recipeUsageBody"><tr><td colspan="2" class="text-muted small p-3">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
+    </div>
 
-      <!-- Manual Adjustment -->
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-sliders"></i> Manual Adjustment</div>
-        <div class="card-body">
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Ingredient</label>
-            <select class="form-select form-select-sm" id="adjustIngredient"></select>
+    <!-- C. Ingredients Inventory -->
+    <div class="tab-pane fade" id="ingredientsPanel" role="tabpanel">
+      <div class="row g-3">
+        <div class="col-md-7">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between">
+              <span>Raw Material Stock</span>
+              <button class="btn btn-outline-success btn-sm" onclick="loadIngredients()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-sm table-hover mb-0">
+                <thead><tr><th>#</th><th>Ingredient</th><th>Unit</th><th class="text-end">Current</th><th class="text-end">Min</th><th>Status</th></tr></thead>
+                <tbody id="ingredientsBody"><tr><td colspan="6" class="text-muted small p-3">Loading...</td></tr></tbody>
+              </table>
+            </div>
           </div>
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Qty Change <span class="text-muted fw-normal">(use negative to reduce)</span></label>
-            <input type="number" class="form-control form-control-sm" id="adjustQty" step="0.001" placeholder="e.g. -2.5 or 3">
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Reason</label>
-            <input type="text" class="form-control form-control-sm" id="adjustNote" placeholder="Spillage, count correction...">
-          </div>
-          <button class="btn btn-warning btn-sm w-100" onclick="submitAdjustment()"><i class="bi bi-check-lg"></i> Apply Adjustment</button>
         </div>
-      </div>
-
-      <!-- Movement History -->
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between align-items-center">
-          <span><i class="bi bi-clock-history"></i> Recent Movements</span>
-          <button class="btn btn-outline-secondary btn-sm" onclick="loadMovements()"><i class="bi bi-arrow-clockwise"></i></button>
-        </div>
-        <div class="card-body p-0" style="max-height:280px;overflow-y:auto;">
-          <table class="table table-sm mb-0">
-            <thead><tr><th>Ingredient</th><th>Type</th><th class="text-end">Qty</th><th>Time</th></tr></thead>
-            <tbody id="movementsBody"><tr><td colspan="4" class="text-muted small p-3">Loading...</td></tr></tbody>
-          </table>
+        <div class="col-md-5">
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-bag-plus"></i> Add Stock Purchase</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Ingredient</label>
+                <select class="form-select form-select-sm" id="purchaseIngredient"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Quantity</label>
+                <input type="number" class="form-control form-control-sm" id="purchaseQty" min="0.001" step="0.001">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Note</label>
+                <input type="text" class="form-control form-control-sm" id="purchaseNote">
+              </div>
+              <button class="btn btn-success btn-sm w-100" onclick="submitPurchase()"><i class="bi bi-check-lg"></i> Record Purchase</button>
+            </div>
+          </div>
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header cg-card-header fw-semibold py-2"><i class="bi bi-sliders"></i> Manual Adjustment</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Ingredient</label>
+                <select class="form-select form-select-sm" id="adjustIngredient"></select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small fw-semibold">Qty Change</label>
+                <input type="number" class="form-control form-control-sm" id="adjustQty" step="0.001">
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Reason</label>
+                <input type="text" class="form-control form-control-sm" id="adjustNote">
+              </div>
+              <button class="btn btn-warning btn-sm w-100" onclick="submitAdjustment()"><i class="bi bi-check-lg"></i> Apply Adjustment</button>
+            </div>
+          </div>
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold py-2 d-flex justify-content-between">
+              <span>Ingredient Movements</span>
+              <button class="btn btn-outline-secondary btn-sm" onclick="loadMovements()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body p-0" style="max-height:200px;overflow-y:auto;">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Item</th><th>Type</th><th class="text-end">Qty</th><th>Time</th></tr></thead>
+                <tbody id="movementsBody"><tr><td colspan="4" class="text-muted small p-3">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -85,11 +224,122 @@
 {% block extra_scripts %}
 <script>
 let ingredientsList = [];
+
+async function loadLowStockAlerts() {
+  try {
+    const alerts = await apiFetch('/inventory/low-stock-alerts');
+    const el = document.getElementById('lowStockAlertsList');
+    el.innerHTML = alerts.length
+      ? alerts.map(a => `<li class="list-group-item small text-danger">${a.message}</li>`).join('')
+      : '<li class="list-group-item text-muted small">No active low stock alerts</li>';
+  } catch (err) {}
+}
+
+async function loadDirectProducts() {
+  try {
+    const products = await apiFetch('/inventory/direct-sale-products');
+    const tbody = document.getElementById('directProductsBody');
+    tbody.innerHTML = products.map(p => {
+      const low = p.is_low_stock;
+      return `<tr class="${low?'table-danger':''}">
+        <td class="fw-semibold">${p.name}</td>
+        <td class="text-end">${p.current_qty}</td>
+        <td class="text-end">${p.min_qty_alert}</td>
+        <td>${low?'<span class="badge bg-danger">Low</span>':'<span class="badge bg-success">OK</span>'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="text-muted small p-3">No direct sale products. Set product_type in Admin.</td></tr>';
+    const opts = products.map(p => `<option value="${p.id}">${p.name} (${p.current_qty})</option>`).join('');
+    document.getElementById('directAddProduct').innerHTML = opts || '<option disabled>No products</option>';
+    document.getElementById('directAdjustProduct').innerHTML = opts || '<option disabled>No products</option>';
+    loadLowStockAlerts();
+  } catch (err) { showAlert(err.message); }
+}
+
+async function submitDirectAddStock() {
+  const productId = document.getElementById('directAddProduct').value;
+  const qty = document.getElementById('directAddQty').value;
+  const note = document.getElementById('directAddNote').value;
+  if (!productId || !qty) { showAlert('Select product and quantity.'); return; }
+  try {
+    const data = await apiFetch('/inventory/direct-sale-products/add-stock', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: parseInt(productId), qty: parseFloat(qty), note })
+    });
+    showAlert(`Stock updated. ${data.name}: ${data.new_qty}`, 'success');
+    document.getElementById('directAddQty').value = '';
+    loadDirectProducts();
+  } catch (err) { showAlert(err.message); }
+}
+
+async function submitDirectAdjustStock() {
+  const productId = document.getElementById('directAdjustProduct').value;
+  const qtyChange = document.getElementById('directAdjustQty').value;
+  const note = document.getElementById('directAdjustNote').value;
+  if (!productId || qtyChange === '' || parseFloat(qtyChange) === 0) {
+    showAlert('Select product and a non-zero quantity change.');
+    return;
+  }
+  try {
+    const data = await apiFetch('/inventory/direct-sale-products/adjust-stock', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: parseInt(productId), qty_change: parseFloat(qtyChange), note })
+    });
+    showAlert(`Adjustment applied. ${data.name}: ${data.new_qty}`, 'success');
+    document.getElementById('directAdjustQty').value = '';
+    loadDirectProducts();
+  } catch (err) { showAlert(err.message); }
+}
+
+async function loadRecipeProducts() {
+  try {
+    const products = await apiFetch('/inventory/recipe-products');
+    const body = document.getElementById('recipeProductsBody');
+    body.innerHTML = products.map(p => {
+      const rows = p.recipes.length
+        ? p.recipes.map(r => `<li class="small">${r.ingredient_name}: ${r.qty_per_item} ${r.ingredient_unit}/item</li>`).join('')
+        : '<li class="small text-muted">No recipe mapped</li>';
+      return `<div class="border-bottom pb-2 mb-2"><strong>${p.name}</strong><ul class="mb-0">${rows}</ul></div>`;
+    }).join('') || '<p class="text-muted small">No recipe-based products.</p>';
+    const opts = products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    document.getElementById('recipeProductSelect').innerHTML = opts || '<option disabled>No products</option>';
+  } catch (err) { showAlert(err.message); }
+}
+
+async function loadRecipeUsage() {
+  try {
+    const data = await apiFetch('/inventory/recipe-usage');
+    const tbody = document.getElementById('recipeUsageBody');
+    tbody.innerHTML = data.map(u =>
+      `<tr><td>${u.ingredient_name}</td><td class="text-end">${u.estimated_usage} ${u.unit}</td></tr>`
+    ).join('') || '<tr><td colspan="2" class="text-muted small p-3">No usage data yet</td></tr>';
+  } catch (err) {}
+}
+
+async function submitRecipeMapping() {
+  const productId = document.getElementById('recipeProductSelect').value;
+  const ingredientId = document.getElementById('recipeIngredientSelect').value;
+  const qty = document.getElementById('recipeQtyPerItem').value;
+  if (!productId || !ingredientId || !qty) { showAlert('Fill all recipe fields.'); return; }
+  try {
+    await apiFetch('/inventory/recipe-products', {
+      method: 'POST',
+      body: JSON.stringify({
+        product_id: parseInt(productId),
+        ingredient_id: parseInt(ingredientId),
+        qty_per_item: parseFloat(qty)
+      })
+    });
+    showAlert('Recipe mapping saved.', 'success');
+    loadRecipeProducts();
+    loadRecipeUsage();
+  } catch (err) { showAlert(err.message); }
+}
+
 async function loadIngredients() {
   try {
     ingredientsList = await apiFetch('/inventory/ingredients');
     const tbody = document.getElementById('ingredientsBody');
-    tbody.innerHTML = ingredientsList.map((i,idx) => {
+    tbody.innerHTML = ingredientsList.map((i, idx) => {
       const low = parseFloat(i.current_qty) <= parseFloat(i.min_qty_alert);
       return `<tr class="${low?'table-danger':''}">
         <td>${idx+1}</td><td class="fw-semibold">${i.name}</td><td>${i.unit}</td>
@@ -97,13 +347,36 @@ async function loadIngredients() {
         <td class="text-end">${i.min_qty_alert}</td>
         <td>${low?'<span class="badge bg-danger">Low</span>':'<span class="badge bg-success">OK</span>'}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="text-muted small p-3">No ingredients found. Add them via Admin panel.</td></tr>';
-    // Populate ingredient selects
+    }).join('') || '<tr><td colspan="6" class="text-muted small p-3">No ingredients found.</td></tr>';
     const opts = ingredientsList.map(i => `<option value="${i.id}">${i.name} (${i.current_qty}${i.unit})</option>`).join('');
     document.getElementById('purchaseIngredient').innerHTML = opts || '<option disabled>No ingredients</option>';
     document.getElementById('adjustIngredient').innerHTML = opts || '<option disabled>No ingredients</option>';
-  } catch(err) { showAlert(err.message); }
+    document.getElementById('recipeIngredientSelect').innerHTML = opts || '<option disabled>No ingredients</option>';
+    document.getElementById('recipeAdjustIngredient').innerHTML = opts || '<option disabled>No ingredients</option>';
+  } catch (err) { showAlert(err.message); }
 }
+
+async function submitRecipeAdjustStock() {
+  const ingId = document.getElementById('recipeAdjustIngredient').value;
+  const qty = document.getElementById('recipeAdjustQty').value;
+  const note = document.getElementById('recipeAdjustNote').value;
+  if (!ingId || qty === '' || parseFloat(qty) === 0) {
+    showAlert('Select ingredient and a non-zero quantity change.');
+    return;
+  }
+  try {
+    const data = await apiFetch('/inventory/adjustment', {
+      method: 'POST',
+      body: JSON.stringify({ ingredient_id: parseInt(ingId), qty_change: parseFloat(qty), note })
+    });
+    showAlert(`Adjustment applied. New qty: ${data.new_qty}`, 'success');
+    document.getElementById('recipeAdjustQty').value = '';
+    loadIngredients();
+    loadRecipeUsage();
+    loadLowStockAlerts();
+  } catch (err) { showAlert(err.message); }
+}
+
 async function loadMovements() {
   try {
     const data = await apiFetch('/inventory/movements');
@@ -115,30 +388,32 @@ async function loadMovements() {
        <td class="text-end">${m.qty_change}</td>
        <td style="font-size:.75rem;">${m.created_at}</td></tr>`
     ).join('') || '<tr><td colspan="4" class="text-muted small p-3">No movements</td></tr>';
-  } catch(err) {}
+  } catch (err) {}
 }
+
 async function submitPurchase() {
   const ingId = document.getElementById('purchaseIngredient').value;
   const qty = document.getElementById('purchaseQty').value;
   const note = document.getElementById('purchaseNote').value;
-  if (!ingId || !qty) { showAlert('Select an ingredient and enter quantity.'); return; }
+  if (!ingId || !qty) { showAlert('Select ingredient and quantity.'); return; }
   try {
     const data = await apiFetch('/inventory/purchase', {
       method: 'POST',
       body: JSON.stringify({ingredient_id: parseInt(ingId), qty: parseFloat(qty), note})
     });
-    showAlert(`Purchase recorded. ${data.name} new stock: ${data.new_qty}`, 'success');
+    showAlert(`Purchase recorded. New stock: ${data.new_qty}`, 'success');
     document.getElementById('purchaseQty').value = '';
-    document.getElementById('purchaseNote').value = '';
     loadIngredients();
     loadMovements();
-  } catch(err) { showAlert(err.message); }
+    loadLowStockAlerts();
+  } catch (err) { showAlert(err.message); }
 }
+
 async function submitAdjustment() {
   const ingId = document.getElementById('adjustIngredient').value;
   const qty = document.getElementById('adjustQty').value;
   const note = document.getElementById('adjustNote').value;
-  if (!ingId || !qty) { showAlert('Select an ingredient and enter adjustment.'); return; }
+  if (!ingId || !qty) { showAlert('Select ingredient and adjustment.'); return; }
   try {
     const data = await apiFetch('/inventory/adjustment', {
       method: 'POST',
@@ -146,12 +421,21 @@ async function submitAdjustment() {
     });
     showAlert(`Adjustment applied. New qty: ${data.new_qty}`, 'success');
     document.getElementById('adjustQty').value = '';
-    document.getElementById('adjustNote').value = '';
     loadIngredients();
     loadMovements();
-  } catch(err) { showAlert(err.message); }
+  } catch (err) { showAlert(err.message); }
 }
+
+document.getElementById('recipe-tab').addEventListener('shown.bs.tab', () => {
+  loadRecipeProducts();
+  loadRecipeUsage();
+});
+document.getElementById('ingredients-tab').addEventListener('shown.bs.tab', () => {
+  loadIngredients();
+  loadMovements();
+});
+
+loadDirectProducts();
 loadIngredients();
-loadMovements();
 </script>
 {% endblock %}

@@ -15,9 +15,15 @@ from django.views.decorators.http import require_http_methods
 
 from .models import (
     AuditLog, Category, CreditAccount, CreditRecord, Ingredient, InventoryMovement,
-    Order, OrderItem, Payment, Product, Shift, Table,
+    LowStockAlert, Order, OrderItem, Payment, Product, ProductStockMovement, Recipe, Shift, Table,
 )
-from .services import StockError, consume_stock_for_order, recompute_order_totals, restore_stock_for_order
+from .services import (
+    StockError,
+    check_stock_for_order,
+    finalize_order_inventory,
+    recompute_order_totals,
+    restore_stock_for_order,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -270,9 +276,17 @@ def dashboard_overview(request):
     active_orders = Order.objects.filter(
         status__in=[Order.StatusChoices.OPEN, Order.StatusChoices.CONFIRMED, Order.StatusChoices.PREPARING]
     ).count()
-    low_stock_count = Ingredient.objects.filter(
-        is_active=True, current_qty__lte=models_min_qty_alert_f()
+    from django.db.models import F
+    low_ingredients = Ingredient.objects.filter(
+        is_active=True, current_qty__lte=F('min_qty_alert')
     ).count()
+    low_products = Product.objects.filter(
+        is_active=True,
+        product_type=Product.ProductTypeChoices.DIRECT_SALE,
+        current_qty__lte=F('min_qty_alert'),
+    ).count()
+    low_stock_count = low_ingredients + low_products
+    unresolved_alerts = LowStockAlert.objects.filter(is_resolved=False).count()
     shift = Shift.objects.filter(status=Shift.ShiftStatusChoices.OPEN).order_by('-opened_at').first()
     shift_data = None
     if shift:
@@ -289,13 +303,9 @@ def dashboard_overview(request):
         'summary': summary,
         'active_orders': active_orders,
         'low_stock_count': low_stock_count,
+        'unresolved_alerts': unresolved_alerts,
         'current_shift': shift_data,
     })
-
-
-def models_min_qty_alert_f():
-    from django.db.models import F
-    return F('min_qty_alert')
 
 
 @api_login_required
@@ -348,6 +358,10 @@ def products(request):
             'sku': p.sku,
             'price': str(p.price),
             'tax_percent': str(p.tax_percent),
+            'product_type': p.product_type,
+            'current_qty': str(p.current_qty),
+            'min_qty_alert': str(p.min_qty_alert),
+            'is_low_stock': p.is_low_stock,
             'category_id': p.category_id,
             'category_name': p.category.name if p.category else '',
         }
@@ -423,12 +437,8 @@ def orders(request):
         if items_data:
             recompute_order_totals(order)
         if body.get('auto_confirm'):
-            try:
-                consume_stock_for_order(order)
-                order.status = Order.StatusChoices.CONFIRMED
-                order.save(update_fields=['status'])
-            except StockError:
-                pass
+            order.status = Order.StatusChoices.CONFIRMED
+            order.save(update_fields=['status', 'updated_at'])
 
     _audit('ORDER', 'create', f'Order {order.order_no} created ({order_type})', order.id)
     return _response(True, 'Order created', _order_payload(order), status=201)
@@ -524,14 +534,18 @@ def order_item_detail(request, order_id, item_id):
 @require_http_methods(['POST'])
 def confirm_order(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
-    if order.status not in [Order.StatusChoices.OPEN, Order.StatusChoices.CONFIRMED]:
-        return _response(False, f'Cannot confirm order in status {order.status}', status=400)
-    if not order.items.filter(item_status=OrderItem.ItemStatusChoices.OPEN).exists():
+    if order.status != Order.StatusChoices.OPEN:
+        return _response(
+            False,
+            f'Cannot confirm order in status {order.status}',
+            error_code='INVALID_STATE',
+            status=400,
+        )
+    if not order.items.exists():
         return _response(False, 'Order has no items', status=400)
-    try:
-        consume_stock_for_order(order)
-    except StockError as e:
-        return _response(False, str(e), error_code='INSUFFICIENT_STOCK', status=409)
+    stock_result = check_stock_for_order(order)
+    if stock_result['insufficient']:
+        return _response(False, 'INSUFFICIENT_STOCK', error_code='INSUFFICIENT_STOCK', status=409)
     order.status = Order.StatusChoices.CONFIRMED
     order.updated_at = timezone.now()
     order.save(update_fields=['status', 'updated_at'])
@@ -547,7 +561,7 @@ def cancel_order(request, order_id):
     if order.status in [Order.StatusChoices.PAID, Order.StatusChoices.CANCELLED]:
         return _response(False, f'Cannot cancel order in status {order.status}', status=400)
     with transaction.atomic():
-        if order.status == Order.StatusChoices.CONFIRMED:
+        if order.inventory_deducted:
             restore_stock_for_order(order)
         order.status = Order.StatusChoices.CANCELLED
         order.updated_at = timezone.now()
@@ -577,14 +591,23 @@ def add_payment(request, order_id):
         return _response(False, 'Invalid amount', status=400)
     txn_ref = body.get('txn_ref', '')
     with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk)
         Payment.objects.create(order=order, method=method, amount=amount, txn_ref=txn_ref)
         paid_total = order.payments.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        update_fields = ['payment_status', 'updated_at']
         if paid_total >= order.grand_total:
             order.payment_status = Order.PaymentStatusChoices.PAID
+            order.status = Order.StatusChoices.PAID
+            update_fields.append('status')
         elif paid_total > 0:
             order.payment_status = Order.PaymentStatusChoices.PARTIAL
         order.updated_at = timezone.now()
-        order.save(update_fields=['payment_status', 'updated_at'])
+        order.save(update_fields=update_fields)
+        if order.payment_status == Order.PaymentStatusChoices.PAID:
+            try:
+                finalize_order_inventory(order)
+            except StockError:
+                return _response(False, 'INSUFFICIENT_STOCK', error_code='INSUFFICIENT_STOCK', status=409)
     _audit('PAYMENT', 'add', f'Payment {method} NPR {amount} for {order.order_no}', order.id)
     return _response(True, 'Payment recorded', _order_payload(order))
 
@@ -655,13 +678,6 @@ def checkout_order(request, order_id):
                 status=400,
             )
 
-        # Deduct stock if not already confirmed
-        if order.status == Order.StatusChoices.OPEN:
-            try:
-                consume_stock_for_order(order)
-            except StockError:
-                pass  # Don't block payment for missing recipes
-
         # Record one Payment row per method (except CREDIT, which creates a CreditRecord)
         for p in parsed:
             if p['method'] == 'CREDIT':
@@ -690,6 +706,10 @@ def checkout_order(request, order_id):
         order.payment_status = Order.PaymentStatusChoices.PAID
         order.updated_at = timezone.now()
         order.save(update_fields=['status', 'payment_status', 'updated_at'])
+        try:
+            finalize_order_inventory(order)
+        except StockError:
+            return _response(False, 'INSUFFICIENT_STOCK', error_code='INSUFFICIENT_STOCK', status=409)
 
     summary = ', '.join(f"{p['method']} NPR {p['amount']}" for p in parsed)
     _audit('PAYMENT', 'checkout', f'Order {order.order_no} paid: {summary}', order.id)
@@ -703,9 +723,15 @@ def close_order(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
     if order.payment_status != Order.PaymentStatusChoices.PAID:
         return _response(False, 'Order is not fully paid', status=400)
-    order.status = Order.StatusChoices.PAID
-    order.updated_at = timezone.now()
-    order.save(update_fields=['status', 'updated_at'])
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        order.status = Order.StatusChoices.PAID
+        order.updated_at = timezone.now()
+        order.save(update_fields=['status', 'updated_at'])
+        try:
+            finalize_order_inventory(order)
+        except StockError:
+            return _response(False, 'INSUFFICIENT_STOCK', error_code='INSUFFICIENT_STOCK', status=409)
     return _response(True, 'Order closed', _order_payload(order))
 
 
@@ -829,6 +855,250 @@ def inventory_movements(request):
             'ingredient': m.ingredient.name,
             'movement_type': m.movement_type,
             'qty_change': str(m.qty_change),
+            'deduction_source': m.deduction_source,
+            'reference_id': m.reference_id,
+            'note': m.note,
+            'created_at': m.created_at.strftime('%Y-%m-%d %H:%M'),
+        }
+        for m in qs
+    ]
+    return _response(True, 'OK', data)
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def direct_sale_products(request):
+    qs = Product.objects.filter(
+        is_active=True,
+        product_type=Product.ProductTypeChoices.DIRECT_SALE,
+    ).select_related('category')
+    data = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku,
+            'category_name': p.category.name if p.category else '',
+            'current_qty': str(p.current_qty),
+            'min_qty_alert': str(p.min_qty_alert),
+            'is_low_stock': p.is_low_stock,
+            'price': str(p.price),
+        }
+        for p in qs
+    ]
+    return _response(True, 'OK', data)
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['POST'])
+def direct_sale_add_stock(request):
+    body = _json_body(request)
+    if body is None:
+        return _response(False, 'Invalid JSON', status=400)
+    try:
+        product = Product.objects.get(
+            pk=body['product_id'],
+            is_active=True,
+            product_type=Product.ProductTypeChoices.DIRECT_SALE,
+        )
+    except (Product.DoesNotExist, KeyError):
+        return _response(False, 'Direct sale product not found', status=404)
+    try:
+        qty = Decimal(str(body['qty']))
+        if qty <= 0:
+            raise InvalidOperation
+    except (InvalidOperation, KeyError):
+        return _response(False, 'Invalid qty', status=400)
+    ProductStockMovement.objects.create(
+        product=product,
+        movement_type=ProductStockMovement.MovementTypeChoices.PURCHASE,
+        qty_change=qty,
+        deduction_source=ProductStockMovement.DeductionSourceChoices.MANUAL,
+        note=body.get('note', 'Manual stock add'),
+    )
+    product.refresh_from_db()
+    _audit('INVENTORY', 'product_purchase', f'Added {qty} to {product.name}', product.id)
+    return _response(True, 'Stock added', {
+        'product_id': product.id,
+        'name': product.name,
+        'new_qty': str(product.current_qty),
+    })
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['POST'])
+def direct_sale_adjust_stock(request):
+    body = _json_body(request)
+    if body is None:
+        return _response(False, 'Invalid JSON', status=400)
+    try:
+        product = Product.objects.get(
+            pk=body['product_id'],
+            is_active=True,
+            product_type=Product.ProductTypeChoices.DIRECT_SALE,
+        )
+    except (Product.DoesNotExist, KeyError):
+        return _response(False, 'Direct sale product not found', status=404)
+    try:
+        qty_change = Decimal(str(body['qty_change']))
+        if qty_change == 0:
+            raise InvalidOperation
+    except (InvalidOperation, KeyError):
+        return _response(False, 'Invalid qty_change', status=400)
+    if product.current_qty + qty_change < 0:
+        return _response(False, 'Adjustment would result in negative stock', status=400)
+    ProductStockMovement.objects.create(
+        product=product,
+        movement_type=ProductStockMovement.MovementTypeChoices.ADJUST,
+        qty_change=qty_change,
+        deduction_source=ProductStockMovement.DeductionSourceChoices.MANUAL,
+        note=body.get('note', 'Manual adjustment'),
+    )
+    product.refresh_from_db()
+    _audit('INVENTORY', 'product_adjust', f'Adjusted {product.name} by {qty_change}', product.id)
+    return _response(True, 'Adjustment recorded', {
+        'product_id': product.id,
+        'name': product.name,
+        'new_qty': str(product.current_qty),
+    })
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def recipe_products(request):
+    if request.method == 'GET':
+        qs = Product.objects.filter(
+            is_active=True,
+            product_type=Product.ProductTypeChoices.RECIPE_BASED,
+        ).select_related('category').prefetch_related('recipes__ingredient')
+        data = []
+        for p in qs:
+            recipes = [
+                {
+                    'id': r.id,
+                    'ingredient_id': r.ingredient_id,
+                    'ingredient_name': r.ingredient.name,
+                    'ingredient_unit': r.ingredient.unit,
+                    'qty_per_item': str(r.qty_per_item),
+                }
+                for r in p.recipes.all()
+            ]
+            data.append({
+                'id': p.id,
+                'name': p.name,
+                'category_name': p.category.name if p.category else '',
+                'price': str(p.price),
+                'recipes': recipes,
+            })
+        return _response(True, 'OK', data)
+
+    body = _json_body(request)
+    if body is None:
+        return _response(False, 'Invalid JSON', status=400)
+    try:
+        product = Product.objects.get(
+            pk=body['product_id'],
+            product_type=Product.ProductTypeChoices.RECIPE_BASED,
+        )
+        ingredient = Ingredient.objects.get(pk=body['ingredient_id'], is_active=True)
+        qty_per_item = Decimal(str(body['qty_per_item']))
+        if qty_per_item <= 0:
+            raise InvalidOperation
+    except (Product.DoesNotExist, Ingredient.DoesNotExist, KeyError, InvalidOperation):
+        return _response(False, 'Invalid product, ingredient, or quantity', status=400)
+    recipe, created = Recipe.objects.update_or_create(
+        product=product,
+        ingredient=ingredient,
+        defaults={'qty_per_item': qty_per_item},
+    )
+    return _response(
+        True,
+        'Recipe mapping saved',
+        {
+            'id': recipe.id,
+            'product_id': product.id,
+            'ingredient_id': ingredient.id,
+            'qty_per_item': str(recipe.qty_per_item),
+            'created': created,
+        },
+        status=201 if created else 200,
+    )
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def recipe_usage_estimate(request):
+    """Estimated ingredient usage from PAID orders in date range."""
+    start_dt, end_dt = _date_range(request)
+    orders = Order.objects.filter(
+        status=Order.StatusChoices.PAID,
+        created_at__gte=start_dt,
+        created_at__lte=end_dt,
+    ).prefetch_related('items__product__recipes__ingredient')
+    usage = {}
+    for order in orders:
+        for item in order.items.all():
+            if item.product.product_type != Product.ProductTypeChoices.RECIPE_BASED:
+                continue
+            for recipe in item.product.recipes.all():
+                qty = recipe.qty_per_item * item.qty
+                key = recipe.ingredient_id
+                usage[key] = usage.get(key, Decimal('0')) + qty
+    ingredients = Ingredient.objects.filter(id__in=usage.keys())
+    ing_map = {i.id: i for i in ingredients}
+    data = [
+        {
+            'ingredient_id': ing_id,
+            'ingredient_name': ing_map[ing_id].name,
+            'unit': ing_map[ing_id].unit,
+            'estimated_usage': str(qty),
+        }
+        for ing_id, qty in sorted(usage.items(), key=lambda x: ing_map[x[0]].name)
+    ]
+    return _response(True, 'OK', data)
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def low_stock_alerts(request):
+    qs = LowStockAlert.objects.filter(is_resolved=False).select_related('product', 'ingredient')[:100]
+    data = [
+        {
+            'id': a.id,
+            'item_type': a.item_type,
+            'name': (a.product.name if a.product else a.ingredient.name),
+            'current_qty': str(a.current_qty),
+            'min_qty_alert': str(a.min_qty_alert),
+            'message': a.message,
+            'created_at': a.created_at.isoformat(),
+        }
+        for a in qs
+    ]
+    return _response(True, 'OK', data)
+
+
+@api_login_required
+@csrf_exempt
+@require_http_methods(['GET'])
+def product_stock_movements(request):
+    qs = ProductStockMovement.objects.select_related('product', 'order').order_by('-created_at')[:200]
+    product_id = request.GET.get('product_id')
+    if product_id:
+        qs = qs.filter(product_id=product_id)
+    data = [
+        {
+            'id': m.id,
+            'product': m.product.name,
+            'movement_type': m.movement_type,
+            'qty_change': str(m.qty_change),
+            'deduction_source': m.deduction_source,
+            'order_id': m.order_id,
+            'order_no': m.order.order_no if m.order else '',
             'note': m.note,
             'created_at': m.created_at.strftime('%Y-%m-%d %H:%M'),
         }
@@ -1365,12 +1635,6 @@ def credit_checkout(request, order_id):
             order.grand_total = max(order.subtotal + order.tax_amount - discount, Decimal('0'))
             order.save(update_fields=['discount_amount', 'grand_total'])
 
-        if order.status == Order.StatusChoices.OPEN:
-            try:
-                consume_stock_for_order(order)
-            except StockError:
-                pass
-
         # Find or create the credit account (case-insensitive match)
         try:
             account = CreditAccount.objects.get(name__iexact=customer_name)
@@ -1392,6 +1656,10 @@ def credit_checkout(request, order_id):
         order.payment_status = Order.PaymentStatusChoices.PAID
         order.updated_at = timezone.now()
         order.save(update_fields=['status', 'payment_status', 'updated_at'])
+        try:
+            finalize_order_inventory(order)
+        except StockError:
+            return _response(False, 'INSUFFICIENT_STOCK', error_code='INSUFFICIENT_STOCK', status=409)
 
     _audit('PAYMENT', 'credit', f'Order {order.order_no} credited NPR {amount} to {customer_name}', order.id)
     return _response(True, f'Recorded as credit for {customer_name}', _order_payload(order))
