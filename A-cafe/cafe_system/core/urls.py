@@ -58,5 +58,6 @@ urlpatterns = [
     # Credit accounts
     path('credit/accounts', views.credit_accounts, name='credit_accounts'),
     path('credit/accounts/<int:account_id>', views.credit_account_detail, name='credit_account_detail'),
+    path('credit/accounts/export', views.credit_accounts_export, name='credit_accounts_export'),
     path('credit/accounts/<int:account_id>/repay', views.credit_repay, name='credit_repay'),
 ]

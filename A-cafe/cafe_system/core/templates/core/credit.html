@@ -37,6 +37,9 @@
       <button class="btn btn-sm btn-outline-secondary" id="filterAllBtn" onclick="setFilter('all')">All Customers</button>
       <button class="btn btn-sm" id="filterDebtBtn"
               style="background:#1a5276;color:#fff;" onclick="setFilter('debt')">Outstanding Only</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="exportCreditReport()">
+        Export Credit Report (CSV)
+      </button>
     </div>
   </div>
 
@@ -186,6 +189,10 @@ const historyModal = new bootstrap.Modal(document.getElementById('historyModal')
 const repayModal   = new bootstrap.Modal(document.getElementById('repayModal'));
 
 function fmtNPR(v) { return 'NPR ' + parseFloat(v || 0).toFixed(2); }
+
+function exportCreditReport() {
+  window.location.href = '/api/credit/accounts/export';
+}
 
 async function loadAccounts() {
   try {

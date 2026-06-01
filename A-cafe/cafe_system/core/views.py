@@ -1712,6 +1712,33 @@ def credit_account_detail(request, account_id):
 
 @api_login_required
 @csrf_exempt
+@require_http_methods(['GET'])
+def credit_accounts_export(request):
+    """Export customer credit/due report as CSV."""
+    accounts = CreditAccount.objects.prefetch_related('records').order_by('name')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = (
+        f'attachment; filename="credit_accounts_due_{timezone.now().date().isoformat()}.csv"'
+    )
+    writer = csv.writer(response)
+    writer.writerow(['Customer', 'Phone', 'Total Credited', 'Total Repaid', 'Outstanding Balance'])
+
+    for a in accounts:
+        credit, repaid, balance = _credit_balance(a)
+        writer.writerow([
+            a.name,
+            a.phone or '',
+            str(credit),
+            str(repaid),
+            str(balance),
+        ])
+
+    return response
+
+
+@api_login_required
+@csrf_exempt
 @require_http_methods(['POST'])
 def credit_repay(request, account_id):
     body = _json_body(request)

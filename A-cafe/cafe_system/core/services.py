@@ -31,8 +31,6 @@ def _aggregate_recipe_requirements(order: Order):
             qty_needed = recipe.qty_per_item * item.qty
             required[recipe.ingredient_id] = required.get(recipe.ingredient_id, Decimal('0')) + qty_needed
     return required
-
-
 def _aggregate_direct_sale_requirements(order: Order):
     required = {}
     items = order.items.select_related('product').all()
