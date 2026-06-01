@@ -37,13 +37,24 @@ class Category(BaseTimeModel):
 
 
 class Product(BaseTimeModel):
+    class ProductTypeChoices(models.TextChoices):
+        DIRECT_SALE = 'direct_sale', 'Direct Sale'
+        RECIPE_BASED = 'recipe_based', 'Recipe Based'
+
     name = models.CharField(max_length=150)
     sku = models.CharField(max_length=50, unique=True, null=True, blank=True)
     category = models.ForeignKey(
         Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products'
     )
+    product_type = models.CharField(
+        max_length=20,
+        choices=ProductTypeChoices.choices,
+        default=ProductTypeChoices.RECIPE_BASED,
+    )
     price = models.DecimalField(max_digits=10, decimal_places=2)
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    current_qty = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    min_qty_alert = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -51,10 +62,16 @@ class Product(BaseTimeModel):
         constraints = [
             models.CheckConstraint(condition=models.Q(price__gte=0), name='product_price_gte_zero'),
             models.CheckConstraint(condition=models.Q(tax_percent__gte=0), name='product_tax_gte_zero'),
+            models.CheckConstraint(condition=models.Q(current_qty__gte=0), name='product_current_qty_gte_zero'),
+            models.CheckConstraint(condition=models.Q(min_qty_alert__gte=0), name='product_min_qty_gte_zero'),
         ]
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_low_stock(self):
+        return self.current_qty <= self.min_qty_alert
 
 
 class Ingredient(BaseTimeModel):
@@ -128,6 +145,7 @@ class Order(BaseTimeModel):
     payment_status = models.CharField(
         max_length=20, choices=PaymentStatusChoices.choices, default=PaymentStatusChoices.UNPAID
     )
+    inventory_deducted = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -192,6 +210,7 @@ class InventoryMovement(models.Model):
     qty_change = models.DecimalField(max_digits=12, decimal_places=3)
     reference_type = models.CharField(max_length=20, choices=ReferenceTypeChoices.choices, blank=True)
     reference_id = models.CharField(max_length=50, blank=True)
+    deduction_source = models.CharField(max_length=20, blank=True, default='')
     note = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -209,6 +228,74 @@ class InventoryMovement(models.Model):
 
     def __str__(self):
         return f'{self.ingredient.name} {self.movement_type} {self.qty_change}'
+
+
+class ProductStockMovement(models.Model):
+    class MovementTypeChoices(models.TextChoices):
+        SALE = 'SALE', 'Sale'
+        PURCHASE = 'PURCHASE', 'Purchase'
+        ADJUST = 'ADJUST', 'Adjust'
+        RETURN = 'RETURN', 'Return'
+
+    class DeductionSourceChoices(models.TextChoices):
+        SALE = 'sale', 'Sale'
+        MANUAL = 'manual', 'Manual'
+
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_movements')
+    movement_type = models.CharField(max_length=20, choices=MovementTypeChoices.choices)
+    qty_change = models.DecimalField(max_digits=12, decimal_places=3)
+    deduction_source = models.CharField(
+        max_length=20, choices=DeductionSourceChoices.choices, blank=True, default=''
+    )
+    order = models.ForeignKey(
+        'Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='product_stock_movements'
+    )
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['product', 'created_at']),
+            models.Index(fields=['order', 'created_at']),
+        ]
+
+    def save(self, *args, **kwargs):
+        is_create = self._state.adding
+        super().save(*args, **kwargs)
+        if is_create:
+            Product.objects.filter(pk=self.product_id).update(
+                current_qty=F('current_qty') + self.qty_change
+            )
+
+    def __str__(self):
+        return f'{self.product.name} {self.movement_type} {self.qty_change}'
+
+
+class LowStockAlert(models.Model):
+    class ItemTypeChoices(models.TextChoices):
+        PRODUCT = 'product', 'Product'
+        INGREDIENT = 'ingredient', 'Ingredient'
+
+    item_type = models.CharField(max_length=20, choices=ItemTypeChoices.choices)
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, null=True, blank=True, related_name='low_stock_alerts'
+    )
+    ingredient = models.ForeignKey(
+        Ingredient, on_delete=models.CASCADE, null=True, blank=True, related_name='low_stock_alerts'
+    )
+    current_qty = models.DecimalField(max_digits=12, decimal_places=3)
+    min_qty_alert = models.DecimalField(max_digits=12, decimal_places=3)
+    message = models.CharField(max_length=255)
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['is_resolved', 'created_at'])]
+
+    def __str__(self):
+        return self.message
 
 
 class StockReservation(BaseTimeModel):
