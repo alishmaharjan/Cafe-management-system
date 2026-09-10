@@ -15,6 +15,7 @@ const pos = {
   categories: [],
   products: [],
   currentCategoryId: '',
+  searchQuery: '',
 };
 
 // ── Bootstrap modals ──────────────────────────────────────────────────────
@@ -150,18 +151,67 @@ async function loadProducts(catId) {
   } catch (err) { /* silent */ }
 }
 
+function filterProducts() {
+  const input = document.getElementById('productSearch');
+  pos.searchQuery = (input?.value || '').trim();
+  const clearBtn = document.getElementById('productSearchClear');
+  if (clearBtn) clearBtn.style.display = pos.searchQuery ? '' : 'none';
+  renderProducts();
+}
+
+function clearProductSearch() {
+  const input = document.getElementById('productSearch');
+  if (input) input.value = '';
+  pos.searchQuery = '';
+  const clearBtn = document.getElementById('productSearchClear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderProducts();
+}
+
+function getFilteredProducts() {
+  const q = pos.searchQuery.toLowerCase();
+  if (!q) return pos.products;
+
+  return pos.products.filter(p => {
+    const name = String(p.name || '').toLowerCase();
+    const price = String(p.price ?? '');
+    const priceFmt = parseFloat(p.price || 0).toFixed(2);
+    const stock = String(p.current_qty ?? '');
+    const stockFmt = parseFloat(p.current_qty || 0).toString();
+
+    return (
+      name.includes(q) ||
+      price.includes(q) ||
+      priceFmt.includes(q) ||
+      stock.includes(q) ||
+      stockFmt.includes(q)
+    );
+  });
+}
+
 function renderProducts() {
   const grid = document.getElementById('productGrid');
   if (!pos.products.length) {
     grid.innerHTML = '<div class="text-muted small p-4">No products in this category. Add them via the Admin panel.</div>';
     return;
   }
-  grid.innerHTML = pos.products.map(p =>
-    `<div class="prod-card" onclick="addToCart(${p.id}, '${escHtml(p.name)}', ${p.price})">
+
+  const filtered = getFilteredProducts();
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="text-muted small p-4">No products match "${escHtml(pos.searchQuery)}".</div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p => {
+    const stock = parseFloat(p.current_qty || 0);
+    const stockLabel = Number.isInteger(stock) ? stock.toString() : stock.toFixed(3).replace(/\.?0+$/, '');
+    const stockClass = p.is_low_stock ? 'prod-stock low' : 'prod-stock';
+    return `<div class="prod-card" onclick="addToCart(${p.id}, '${escHtml(p.name)}', ${p.price})">
       <div class="prod-name">${escHtml(p.name)}</div>
       <div class="prod-price">NPR ${parseFloat(p.price).toFixed(2)}</div>
-    </div>`
-  ).join('');
+      <div class="${stockClass}">Stock: ${stockLabel}</div>
+    </div>`;
+  }).join('');
 }
 
 function escHtml(str) {
