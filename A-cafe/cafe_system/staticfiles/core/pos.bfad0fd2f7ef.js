@@ -15,6 +15,8 @@ const pos = {
   categories: [],
   products: [],
   currentCategoryId: '',
+  searchQuery: '',
+  sortMode: '',   // '', 'price_asc', 'price_desc', 'stock_desc'
 };
 
 // ── Bootstrap modals ──────────────────────────────────────────────────────
@@ -150,18 +152,105 @@ async function loadProducts(catId) {
   } catch (err) { /* silent */ }
 }
 
+function filterProducts() {
+  const input = document.getElementById('productSearch');
+  pos.searchQuery = (input?.value || '').trim();
+  const clearBtn = document.getElementById('productSearchClear');
+  if (clearBtn) clearBtn.style.display = pos.searchQuery ? '' : 'none';
+  renderProducts();
+}
+
+function clearProductSearch() {
+  const input = document.getElementById('productSearch');
+  if (input) input.value = '';
+  pos.searchQuery = '';
+  const clearBtn = document.getElementById('productSearchClear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderProducts();
+}
+
+function togglePriceSort() {
+  if (pos.sortMode === 'price_asc') {
+    pos.sortMode = 'price_desc';
+  } else if (pos.sortMode === 'price_desc') {
+    pos.sortMode = '';
+  } else {
+    pos.sortMode = 'price_asc';
+  }
+  updateSortButtons();
+  renderProducts();
+}
+
+function toggleStockSort() {
+  if (pos.sortMode === 'stock_desc') {
+    pos.sortMode = '';
+  } else {
+    pos.sortMode = 'stock_desc';
+  }
+  updateSortButtons();
+  renderProducts();
+}
+
+function updateSortButtons() {
+  const priceBtn = document.getElementById('sortPriceBtn');
+  const stockBtn = document.getElementById('sortStockBtn');
+  const priceLabel = document.getElementById('sortPriceLabel');
+  const stockLabel = document.getElementById('sortStockLabel');
+
+  if (priceBtn) {
+    const priceActive = pos.sortMode === 'price_asc' || pos.sortMode === 'price_desc';
+    priceBtn.classList.toggle('active', priceActive);
+    if (pos.sortMode === 'price_asc') priceLabel.textContent = 'Price ↑';
+    else if (pos.sortMode === 'price_desc') priceLabel.textContent = 'Price ↓';
+    else priceLabel.textContent = 'Price';
+  }
+  if (stockBtn) {
+    const stockActive = pos.sortMode === 'stock_desc';
+    stockBtn.classList.toggle('active', stockActive);
+    if (stockLabel) stockLabel.textContent = 'Stock ↓';
+  }
+}
+
+function getFilteredProducts() {
+  const q = pos.searchQuery.toLowerCase();
+  let list = !q
+    ? [...pos.products]
+    : pos.products.filter(p => String(p.name || '').toLowerCase().includes(q));
+
+  if (pos.sortMode === 'price_asc') {
+    list.sort((a, b) => parseFloat(a.price || 0) - parseFloat(b.price || 0));
+  } else if (pos.sortMode === 'price_desc') {
+    list.sort((a, b) => parseFloat(b.price || 0) - parseFloat(a.price || 0));
+  } else if (pos.sortMode === 'stock_desc') {
+    list.sort((a, b) => parseFloat(b.current_qty || 0) - parseFloat(a.current_qty || 0));
+  }
+
+  return list;
+}
+
 function renderProducts() {
   const grid = document.getElementById('productGrid');
   if (!pos.products.length) {
     grid.innerHTML = '<div class="text-muted small p-4">No products in this category. Add them via the Admin panel.</div>';
     return;
   }
-  grid.innerHTML = pos.products.map(p =>
-    `<div class="prod-card" onclick="addToCart(${p.id}, '${escHtml(p.name)}', ${p.price})">
+
+  const filtered = getFilteredProducts();
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="text-muted small p-4">No products match "${escHtml(pos.searchQuery)}".</div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p => {
+    const stock = parseFloat(p.current_qty || 0);
+    const stockLabel = Number.isInteger(stock) ? stock.toString() : stock.toFixed(3).replace(/\.?0+$/, '');
+    const stockClass = p.is_low_stock ? 'prod-stock low' : 'prod-stock';
+    return `<div class="prod-card" onclick="addToCart(${p.id}, '${escHtml(p.name)}', ${p.price})">
       <div class="prod-name">${escHtml(p.name)}</div>
       <div class="prod-price">NPR ${parseFloat(p.price).toFixed(2)}</div>
-    </div>`
-  ).join('');
+      <div class="${stockClass}">Stock: ${stockLabel}</div>
+    </div>`;
+  }).join('');
 }
 
 function escHtml(str) {
