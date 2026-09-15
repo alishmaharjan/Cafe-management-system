@@ -54,6 +54,17 @@
     padding: 4px 6px; font-size: .9rem; line-height: 1; border-radius: 4px;
   }
   .pos-search-clear:hover { color: var(--cg-orange); background: #fff5e8; }
+  .pos-sort-btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .pos-sort-btn {
+    border: 2px solid #d0b88a; background: #fff; border-radius: 8px;
+    padding: 6px 10px; font-size: .75rem; font-weight: 600; color: #5c3d2e;
+    cursor: pointer; white-space: nowrap; transition: all .15s;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pos-sort-btn:hover { border-color: var(--cg-orange); color: var(--cg-orange); }
+  .pos-sort-btn.active {
+    background: var(--cg-orange); border-color: var(--cg-orange); color: #fff;
+  }
   .product-grid { flex: 1; overflow-y: auto; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; align-content: start; }
   .prod-card {
     background: #fff; border: 2px solid #e8d5b0; border-radius: 10px; padding: 12px 8px;
@@ -144,12 +155,24 @@
     <div class="pos-search-wrap">
       <i class="bi bi-search search-icon"></i>
       <input type="search" id="productSearch" class="pos-search-input"
-             placeholder="Search by name, price, or stock…"
+             placeholder="Search by product name…"
              autocomplete="off" oninput="filterProducts()">
       <button type="button" class="pos-search-clear" id="productSearchClear"
               title="Clear search" onclick="clearProductSearch()" style="display:none;">
         <i class="bi bi-x-lg"></i>
       </button>
+      <div class="pos-sort-btns">
+        <button type="button" class="pos-sort-btn" id="sortPriceBtn"
+                title="Sort by price" onclick="togglePriceSort()">
+          <i class="bi bi-currency-exchange"></i>
+          <span id="sortPriceLabel">Price</span>
+        </button>
+        <button type="button" class="pos-sort-btn" id="sortStockBtn"
+                title="Stock: highest to lowest" onclick="toggleStockSort()">
+          <i class="bi bi-boxes"></i>
+          <span id="sortStockLabel">Stock ↓</span>
+        </button>
+      </div>
     </div>
     <div class="product-grid" id="productGrid">
       <div class="text-muted small p-4">Select a table or takeaway, then pick items.</div>

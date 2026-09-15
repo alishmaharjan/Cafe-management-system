@@ -16,6 +16,7 @@ const pos = {
   products: [],
   currentCategoryId: '',
   searchQuery: '',
+  sortMode: '',   // '', 'price_asc', 'price_desc', 'stock_desc'
 };
 
 // ── Bootstrap modals ──────────────────────────────────────────────────────
@@ -168,25 +169,63 @@ function clearProductSearch() {
   renderProducts();
 }
 
+function togglePriceSort() {
+  if (pos.sortMode === 'price_asc') {
+    pos.sortMode = 'price_desc';
+  } else if (pos.sortMode === 'price_desc') {
+    pos.sortMode = '';
+  } else {
+    pos.sortMode = 'price_asc';
+  }
+  updateSortButtons();
+  renderProducts();
+}
+
+function toggleStockSort() {
+  if (pos.sortMode === 'stock_desc') {
+    pos.sortMode = '';
+  } else {
+    pos.sortMode = 'stock_desc';
+  }
+  updateSortButtons();
+  renderProducts();
+}
+
+function updateSortButtons() {
+  const priceBtn = document.getElementById('sortPriceBtn');
+  const stockBtn = document.getElementById('sortStockBtn');
+  const priceLabel = document.getElementById('sortPriceLabel');
+  const stockLabel = document.getElementById('sortStockLabel');
+
+  if (priceBtn) {
+    const priceActive = pos.sortMode === 'price_asc' || pos.sortMode === 'price_desc';
+    priceBtn.classList.toggle('active', priceActive);
+    if (pos.sortMode === 'price_asc') priceLabel.textContent = 'Price ↑';
+    else if (pos.sortMode === 'price_desc') priceLabel.textContent = 'Price ↓';
+    else priceLabel.textContent = 'Price';
+  }
+  if (stockBtn) {
+    const stockActive = pos.sortMode === 'stock_desc';
+    stockBtn.classList.toggle('active', stockActive);
+    if (stockLabel) stockLabel.textContent = 'Stock ↓';
+  }
+}
+
 function getFilteredProducts() {
   const q = pos.searchQuery.toLowerCase();
-  if (!q) return pos.products;
+  let list = !q
+    ? [...pos.products]
+    : pos.products.filter(p => String(p.name || '').toLowerCase().includes(q));
 
-  return pos.products.filter(p => {
-    const name = String(p.name || '').toLowerCase();
-    const price = String(p.price ?? '');
-    const priceFmt = parseFloat(p.price || 0).toFixed(2);
-    const stock = String(p.current_qty ?? '');
-    const stockFmt = parseFloat(p.current_qty || 0).toString();
+  if (pos.sortMode === 'price_asc') {
+    list.sort((a, b) => parseFloat(a.price || 0) - parseFloat(b.price || 0));
+  } else if (pos.sortMode === 'price_desc') {
+    list.sort((a, b) => parseFloat(b.price || 0) - parseFloat(a.price || 0));
+  } else if (pos.sortMode === 'stock_desc') {
+    list.sort((a, b) => parseFloat(b.current_qty || 0) - parseFloat(a.current_qty || 0));
+  }
 
-    return (
-      name.includes(q) ||
-      price.includes(q) ||
-      priceFmt.includes(q) ||
-      stock.includes(q) ||
-      stockFmt.includes(q)
-    );
-  });
+  return list;
 }
 
 function renderProducts() {
